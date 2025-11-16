@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import favicon from '$lib/assets/favicon.svg';
 	import '../app.css';
 	import AppBar from '$lib/components/AppBar.svelte';
@@ -14,6 +15,11 @@
 	function toggleDrawer() {
 		drawerOpen = !drawerOpen;
 	}
+
+	// Check if user is authenticated and not on login/register pages
+	const isAuthenticated = $derived(data.user !== null);
+	const isPublicPage = $derived($page.url.pathname === '/login' || $page.url.pathname === '/register');
+	const showSidebar = $derived(isAuthenticated && !isPublicPage);
 
 	// Sync server-side user data with client-side auth store on mount
 	onMount(() => {
@@ -38,9 +44,11 @@
 	<AppBar ontoggleDrawer={toggleDrawer} />
 	
 	<div class="main-content">
-		<NavigationDrawer bind:open={drawerOpen} />
+		{#if showSidebar}
+			<NavigationDrawer bind:open={drawerOpen} />
+		{/if}
 		
-		<main class="content-area">
+		<main class="content-area" class:no-sidebar={!showSidebar}>
 			{@render children?.()}
 		</main>
 	</div>
@@ -71,10 +79,9 @@
 		overflow-y: auto;
 		transition: margin-left 0.3s ease;
 	}
-	
-	@media (min-width: 768px) {
-		.content-area {
-			/* No margin - content flows directly next to sidebar */
-		}
+
+	.content-area.no-sidebar {
+		margin-left: 0;
+		width: 100%;
 	}
 </style>
