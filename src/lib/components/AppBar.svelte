@@ -214,6 +214,7 @@
 		display: flex;
 		align-items: center;
 		gap: var(--spacing-sm);
+		margin-left: auto;
 	}
 	
 	.alerts-button {
@@ -257,18 +258,20 @@
 		display: flex;
 		align-items: center;
 		gap: var(--spacing-sm);
-		padding: var(--spacing-sm);
+		padding: var(--spacing-xs) var(--spacing-sm);
 		background: none;
 		border: none;
 		color: white;
 		cursor: pointer;
-		border-radius: var(--radius-md);
-		transition: background-color 0.2s ease;
+		border-radius: var(--radius-lg);
+		transition: all 0.2s ease;
 		position: relative;
 	}
 
-	.user-button:hover {
-		background: rgba(255, 255, 255, 0.1);
+	.user-button:hover,
+	.user-button:focus {
+		background: rgba(255, 255, 255, 0.15);
+		outline: none;
 	}
 
 	.dropdown-arrow {
@@ -281,15 +284,18 @@
 	}
 
 	.user-avatar {
-		width: 32px;
-		height: 32px;
+		width: 36px;
+		height: 36px;
 		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.2);
+		background: rgba(255, 255, 255, 0.25);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		font-weight: 600;
 		font-size: 0.875rem;
+		color: white;
+		flex-shrink: 0;
+		border: 2px solid rgba(255, 255, 255, 0.3);
 	}
 
 	.user-name {

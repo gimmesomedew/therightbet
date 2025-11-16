@@ -1,4 +1,4 @@
-import adapter from '@sveltejs/adapter-vercel';
+import adapter from '@sveltejs/adapter-auto';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
 /** @type {import('@sveltejs/kit').Config} */
@@ -8,11 +8,10 @@ const config = {
 	preprocess: vitePreprocess(),
 
 	kit: {
-		// Vercel adapter for serverless deployment
-		adapter: adapter({
-			// Optional: Configure runtime regions, edge functions, etc.
-			// See https://kit.svelte.dev/docs/adapter-vercel for options
-		})
+		// adapter-auto detects the deployment environment
+		// It will use adapter-vercel when deployed to Vercel
+		// See https://kit.svelte.dev/docs/adapter-auto for more info
+		adapter: adapter()
 	}
 };
 

@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import { authService } from '$lib/services/auth.js';
 import type { RequestHandler } from './$types';
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, cookies }) => {
 	try {
 		const { email, password, first_name, last_name, invite_code } = await request.json();
 
@@ -29,7 +29,16 @@ export const POST: RequestHandler = async ({ request }) => {
 			invite_code
 		});
 
-		if (result.success) {
+		if (result.success && result.token && result.user) {
+			// Set HTTP-only cookie for security
+			cookies.set('auth_token', result.token, {
+				path: '/',
+				httpOnly: true,
+				secure: process.env.NODE_ENV === 'production',
+				sameSite: 'strict',
+				maxAge: 30 * 60 // 30 minutes
+			});
+
 			return json({
 				success: true,
 				user: result.user,

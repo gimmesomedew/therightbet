@@ -246,7 +246,17 @@ class AuthStore {
 	}
 
 	async logout() {
-		this.clearAuth();
+		try {
+			// Call logout API to clear server-side cookie
+			await fetch('/api/auth/logout', {
+				method: 'POST'
+			});
+		} catch (error) {
+			console.error('Logout API error:', error);
+		} finally {
+			// Always clear client-side auth
+			this.clearAuth();
+		}
 	}
 
 	async refreshUser(): Promise<boolean> {

@@ -1,16 +1,31 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import favicon from '$lib/assets/favicon.svg';
 	import '../app.css';
 	import AppBar from '$lib/components/AppBar.svelte';
 	import NavigationDrawer from '$lib/components/NavigationDrawer.svelte';
+	import { authStore } from '$lib/stores/auth.js';
+	import type { PageData } from './$types';
 
-	let { children } = $props();
+	let { data, children }: { data: PageData; children: any } = $props();
 	
 	let drawerOpen = $state(false);
 	
 	function toggleDrawer() {
 		drawerOpen = !drawerOpen;
 	}
+
+	// Sync server-side user data with client-side auth store on mount
+	onMount(() => {
+		if (data.user) {
+			// If we have server-side user but no client-side user, sync them
+			// This ensures the avatar menu shows up immediately
+			const token = localStorage.getItem('auth_token');
+			if (token && !authStore.user) {
+				authStore.setAuth(data.user, token);
+			}
+		}
+	});
 </script>
 
 <svelte:head>
