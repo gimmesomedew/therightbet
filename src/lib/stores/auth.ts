@@ -27,8 +27,19 @@ class AuthStore {
 		try {
 			const token = localStorage.getItem('auth_token');
 			const userStr = localStorage.getItem('auth_user');
+			const tokenTimestamp = localStorage.getItem('auth_token_timestamp');
 			
-			if (token && userStr) {
+			if (token && userStr && tokenTimestamp) {
+				// Check if token is expired (30 minutes = 1800000 ms)
+				const tokenAge = Date.now() - parseInt(tokenTimestamp);
+				const thirtyMinutes = 30 * 60 * 1000;
+				
+				if (tokenAge > thirtyMinutes) {
+					// Token expired, clear auth
+					this.clearAuth();
+					return;
+				}
+				
 				const user = JSON.parse(userStr);
 				this.state.update(state => ({
 					...state,
@@ -37,6 +48,9 @@ class AuthStore {
 					isAuthenticated: true,
 					isLoading: false
 				}));
+				
+				// Set up session timeout
+				this.setupSessionTimeout();
 			} else {
 				this.state.update(state => ({
 					...state,
@@ -49,12 +63,60 @@ class AuthStore {
 		}
 	}
 
+	private sessionTimeoutId: ReturnType<typeof setTimeout> | null = null;
+	private activityListenersSetup = false;
+
+	private setupSessionTimeout() {
+		// Clear any existing timeout
+		if (this.sessionTimeoutId) {
+			clearTimeout(this.sessionTimeoutId);
+		}
+		
+		// Set timeout for 30 minutes
+		const thirtyMinutes = 30 * 60 * 1000;
+		this.sessionTimeoutId = setTimeout(() => {
+			console.log('Session expired after 30 minutes of inactivity');
+			this.clearAuth();
+			if (browser) {
+				window.location.href = '/login';
+			}
+		}, thirtyMinutes);
+
+		// Set up activity listeners to refresh session on user activity
+		if (browser && !this.activityListenersSetup) {
+			this.setupActivityListeners();
+			this.activityListenersSetup = true;
+		}
+	}
+
+	private setupActivityListeners() {
+		if (!browser) return;
+
+		const refreshSession = () => {
+			// Update token timestamp on activity
+			const token = localStorage.getItem('auth_token');
+			if (token) {
+				localStorage.setItem('auth_token_timestamp', Date.now().toString());
+				// Reset the timeout
+				this.setupSessionTimeout();
+			}
+		};
+
+		// Listen for user activity events
+		const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+		events.forEach(event => {
+			document.addEventListener(event, refreshSession, { passive: true });
+		});
+	}
+
 	private saveToStorage() {
 		if (browser) {
 			this.state.subscribe(state => {
 				if (state.token && state.user) {
 					localStorage.setItem('auth_token', state.token);
 					localStorage.setItem('auth_user', JSON.stringify(state.user));
+					localStorage.setItem('auth_token_timestamp', Date.now().toString());
+					this.setupSessionTimeout();
 				} else {
 					this.clearStorage();
 				}
@@ -66,6 +128,11 @@ class AuthStore {
 		if (browser) {
 			localStorage.removeItem('auth_token');
 			localStorage.removeItem('auth_user');
+			localStorage.removeItem('auth_token_timestamp');
+			if (this.sessionTimeoutId) {
+				clearTimeout(this.sessionTimeoutId);
+				this.sessionTimeoutId = null;
+			}
 		}
 	}
 

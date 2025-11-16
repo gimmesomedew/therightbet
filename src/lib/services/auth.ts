@@ -48,7 +48,7 @@ export interface AuthResult {
 
 class AuthService {
 	private jwtSecret: string;
-	private tokenExpiry = '7d'; // 7 days
+	private tokenExpiry = '30m'; // 30 minutes
 
 	constructor() {
 		this.jwtSecret = JWT_SECRET;

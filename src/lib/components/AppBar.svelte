@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { authStore } from '$lib/stores/auth.js';
 	import { goto } from '$app/navigation';
+	import { onMount, onDestroy } from 'svelte';
 	
 	interface Props {
 		ontoggleDrawer?: () => void;
@@ -8,14 +9,63 @@
 	
 	const { ontoggleDrawer } = $props<Props>();
 	
+	let userMenuOpen = $state(false);
+	let userMenuButton: HTMLButtonElement | null = $state(null);
+	
 	function toggleDrawer() {
 		ontoggleDrawer?.();
 	}
 
+	function toggleUserMenu() {
+		userMenuOpen = !userMenuOpen;
+	}
+
+	function closeUserMenu() {
+		userMenuOpen = false;
+	}
+
 	async function handleLogout() {
 		await authStore.logout();
+		closeUserMenu();
 		goto('/login');
 	}
+
+	function getInitials(user: { first_name?: string; last_name?: string; email: string }): string {
+		if (user.first_name && user.last_name) {
+			return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase();
+		}
+		if (user.first_name) {
+			return user.first_name[0].toUpperCase();
+		}
+		return user.email[0].toUpperCase();
+	}
+
+	// Close menu when clicking outside
+	function handleClickOutside(event: MouseEvent) {
+		const target = event.target as Node;
+		if (userMenuButton && !userMenuButton.contains(target)) {
+			const dropdown = document.querySelector('.user-dropdown');
+			if (dropdown && !dropdown.contains(target)) {
+				closeUserMenu();
+			}
+		}
+	}
+
+	let cleanup: (() => void) | null = null;
+
+	onMount(() => {
+		cleanup = () => {
+			document.removeEventListener('click', handleClickOutside);
+		};
+		document.addEventListener('click', handleClickOutside);
+		return cleanup;
+	});
+
+	onDestroy(() => {
+		if (cleanup) {
+			cleanup();
+		}
+	});
 </script>
 
 <header class="app-bar">
@@ -46,29 +96,49 @@
 
 			{#if $authStore.user}
 				<div class="user-menu">
-					<button class="user-button" aria-label="User menu">
+					<button 
+						bind:this={userMenuButton}
+						class="user-button" 
+						aria-label="User menu"
+						aria-expanded={userMenuOpen}
+						onclick={toggleUserMenu}
+					>
 						<div class="user-avatar">
-							{$authStore.user.first_name?.[0] || $authStore.user.email[0].toUpperCase()}
+							{getInitials($authStore.user)}
 						</div>
 						<span class="user-name">
 							{$authStore.user.first_name || $authStore.user.email.split('@')[0]}
 						</span>
+						<svg 
+							class="dropdown-arrow" 
+							class:open={userMenuOpen}
+							width="16" 
+							height="16" 
+							viewBox="0 0 24 24" 
+							fill="none" 
+							stroke="currentColor" 
+							stroke-width="2"
+						>
+							<polyline points="6,9 12,15 18,9"></polyline>
+						</svg>
 					</button>
 					
-					<div class="user-dropdown">
-						<div class="user-info">
-							<div class="user-email">{$authStore.user.email}</div>
-							<div class="user-tier">{$authStore.user.subscription_tier}</div>
+					{#if userMenuOpen}
+						<div class="user-dropdown" role="menu">
+							<div class="user-info">
+								<div class="user-email">{$authStore.user.email}</div>
+								<div class="user-tier">{$authStore.user.subscription_tier}</div>
+							</div>
+							<button class="logout-button" onclick={handleLogout} role="menuitem">
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+									<polyline points="16,17 21,12 16,7"></polyline>
+									<line x1="21" y1="12" x2="9" y2="12"></line>
+								</svg>
+								Logout
+							</button>
 						</div>
-						<button class="logout-button" onclick={handleLogout}>
-							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-								<polyline points="16,17 21,12 16,7"></polyline>
-								<line x1="21" y1="12" x2="9" y2="12"></line>
-							</svg>
-							Logout
-						</button>
-					</div>
+					{/if}
 				</div>
 			{:else}
 				<button class="menu-dots" aria-label="Menu options">
@@ -194,10 +264,20 @@
 		cursor: pointer;
 		border-radius: var(--radius-md);
 		transition: background-color 0.2s ease;
+		position: relative;
 	}
 
 	.user-button:hover {
 		background: rgba(255, 255, 255, 0.1);
+	}
+
+	.dropdown-arrow {
+		transition: transform 0.2s ease;
+		margin-left: var(--spacing-xs);
+	}
+
+	.dropdown-arrow.open {
+		transform: rotate(180deg);
 	}
 
 	.user-avatar {
@@ -219,15 +299,26 @@
 
 	.user-dropdown {
 		position: absolute;
-		top: 100%;
+		top: calc(100% + var(--spacing-xs));
 		right: 0;
 		background: white;
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-lg);
 		padding: var(--spacing-sm);
-		min-width: 200px;
+		min-width: 220px;
 		z-index: 1000;
-		margin-top: var(--spacing-xs);
+		animation: slideDown 0.2s ease;
+	}
+
+	@keyframes slideDown {
+		from {
+			opacity: 0;
+			transform: translateY(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 
 	.user-info {
