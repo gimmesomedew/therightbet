@@ -961,7 +961,7 @@
 		box-sizing: border-box;
 	}
 
-	/* Freeze first two columns */
+	/* Freeze first column only */
 	.predictions-table th:nth-child(1),
 	.predictions-table td:nth-child(1) {
 		position: sticky;
@@ -981,28 +981,6 @@
 	}
 
 	.predictions-table tbody tr:hover td:nth-child(1) {
-		background: var(--color-background-secondary);
-	}
-
-	.predictions-table th:nth-child(2),
-	.predictions-table td:nth-child(2) {
-		position: sticky;
-		left: 180px; /* Width of first column */
-		z-index: 5;
-		background: var(--color-background-secondary);
-		box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
-	}
-
-	.predictions-table th:nth-child(2) {
-		z-index: 15;
-		background: var(--color-background-secondary);
-	}
-
-	.predictions-table td:nth-child(2) {
-		background: white;
-	}
-
-	.predictions-table tbody tr:hover td:nth-child(2) {
 		background: var(--color-background-secondary);
 	}
 
@@ -1106,11 +1084,6 @@
 		.player-name {
 			min-width: 160px;
 			width: 160px;
-		}
-
-		.predictions-table th:nth-child(2),
-		.predictions-table td:nth-child(2) {
-			left: 150px; /* Adjusted for smaller first column */
 		}
 	}
 </style>

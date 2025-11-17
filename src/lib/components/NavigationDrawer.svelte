@@ -17,6 +17,12 @@
 		badge: null
 		},
 		{
+			title: 'NCAA',
+			href: '/sports/ncaa',
+			icon: 'football',
+			badge: null
+		},
+		{
 			title: 'MLB',
 			href: '/sports/mlb',
 			icon: 'baseball',

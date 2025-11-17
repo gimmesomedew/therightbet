@@ -77,3 +77,46 @@ export const POST: RequestHandler = async ({ request }) => {
 		}, { status: 500 });
 	}
 };
+
+export const PATCH: RequestHandler = async ({ request }) => {
+	try {
+		const userId = await verifyAdminToken(request);
+		if (!userId) {
+			return json({
+				success: false,
+				message: 'Unauthorized'
+			}, { status: 401 });
+		}
+
+		const { invite_code } = await request.json();
+
+		if (!invite_code) {
+			return json({
+				success: false,
+				message: 'Invite code is required'
+			}, { status: 400 });
+		}
+
+		const result = await authService.convertInviteToUser(invite_code);
+
+		if (result.success) {
+			return json({
+				success: true,
+				user: result.user,
+				temporaryPassword: result.temporaryPassword,
+				message: result.message
+			});
+		} else {
+			return json({
+				success: false,
+				message: result.message
+			}, { status: 400 });
+		}
+	} catch (error) {
+		console.error('Convert invite error:', error);
+		return json({
+			success: false,
+			message: 'Failed to convert invite'
+		}, { status: 500 });
+	}
+};

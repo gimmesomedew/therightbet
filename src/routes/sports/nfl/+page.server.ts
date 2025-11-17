@@ -1,8 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { fetchNflTouchdownsFromDb } from '$lib/services/nfl-touchdowns-db';
 import { getAvailableWeeks, type TouchdownResponse, type AvailableWeek } from '$lib/services/nfl-touchdowns';
-
-type SeasonType = 'PRE' | 'REG' | 'POST';
+import { getCurrentNflWeek, getCurrentWeekFromSchedule, type SeasonType } from '$lib/services/nfl-week';
 
 interface SelectionOption {
 	value: string | number;
@@ -22,7 +21,7 @@ function getDefaultSeason(): number {
  * During mid-season (months 9-11), prefer the previous year's completed season.
  */
 function getDefaultSeasonForDisplay(): number {
-	// Default to 2025 season as requested
+	// Default to 2025 season (current NFL season)
 	return 2025;
 }
 
@@ -107,27 +106,45 @@ export const load: PageServerLoad = async ({ url }) => {
 		// Fetch available weeks with data
 		availableWeeks = await getAvailableWeeks(selectedSeason, selectedSeasonType);
 
-		// If no weeks have data, fall back to week 1
-		if (availableWeeks.every((w) => !w.hasData)) {
-			selectedWeek = 1;
-		} else {
-			// Prefer the first week with data, or the requested week if it has data
-			const requestedWeek = Number(url.searchParams.get('week'));
-			const requestedHasData =
-				!Number.isNaN(requestedWeek) &&
-				availableWeeks.some((w) => w.week === requestedWeek && w.hasData);
+		// Get requested week from URL
+		const requestedWeek = Number(url.searchParams.get('week'));
+		const requestedHasData =
+			!Number.isNaN(requestedWeek) &&
+			availableWeeks.some((w) => w.week === requestedWeek && w.hasData);
 
-			if (requestedHasData) {
-				selectedWeek = requestedWeek;
+		if (requestedHasData) {
+			// Use requested week if it has data
+			selectedWeek = requestedWeek;
+		} else {
+			// Determine current week
+			let currentWeek: number | null = null;
+
+			// Try to get current week from database first
+			currentWeek = await getCurrentNflWeek(selectedSeason, selectedSeasonType);
+
+			// If not found in database, try Sportradar schedule
+			if (!currentWeek) {
+				currentWeek = await getCurrentWeekFromSchedule(selectedSeason, selectedSeasonType);
+			}
+
+			// If we found a current week and it has data, use it
+			if (currentWeek && availableWeeks.some((w) => w.week === currentWeek && w.hasData)) {
+				selectedWeek = currentWeek;
 			} else {
-				// Find first week with data
-				const firstWeekWithData = availableWeeks.find((w) => w.hasData);
-				selectedWeek = firstWeekWithData?.week ?? 1;
+				// Fallback to first week with data, or week 1
+				if (availableWeeks.every((w) => !w.hasData)) {
+					selectedWeek = currentWeek || 1;
+				} else {
+					const firstWeekWithData = availableWeeks.find((w) => w.hasData);
+					selectedWeek = firstWeekWithData?.week ?? currentWeek ?? 1;
+				}
 			}
 		}
 	} catch (error) {
 		console.error('Error fetching available weeks:', error);
-		selectedWeek = 1;
+		// Try to get current week as fallback
+		const currentWeek = await getCurrentNflWeek(selectedSeason, selectedSeasonType);
+		selectedWeek = currentWeek || 1;
 	}
 
 	let touchdowns: TouchdownResponse;

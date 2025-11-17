@@ -11,6 +11,13 @@
 	
 	let userMenuOpen = $state(false);
 	let userMenuButton: HTMLButtonElement | null = $state(null);
+	let showChangePasswordModal = $state(false);
+	let currentPassword = $state('');
+	let newPassword = $state('');
+	let confirmPassword = $state('');
+	let passwordError = $state('');
+	let changingPassword = $state(false);
+	let passwordSuccess = $state(false);
 	
 	function toggleDrawer() {
 		ontoggleDrawer?.();
@@ -28,6 +35,83 @@
 		await authStore.logout();
 		closeUserMenu();
 		goto('/login');
+	}
+
+	function openChangePasswordModal() {
+		showChangePasswordModal = true;
+		closeUserMenu();
+		resetPasswordForm();
+	}
+
+	function closeChangePasswordModal() {
+		showChangePasswordModal = false;
+		resetPasswordForm();
+	}
+
+	function resetPasswordForm() {
+		currentPassword = '';
+		newPassword = '';
+		confirmPassword = '';
+		passwordError = '';
+		passwordSuccess = false;
+	}
+
+	async function handleChangePassword() {
+		passwordError = '';
+		passwordSuccess = false;
+
+		// Validation
+		if (!currentPassword || !newPassword || !confirmPassword) {
+			passwordError = 'All fields are required';
+			return;
+		}
+
+		if (newPassword.length < 8) {
+			passwordError = 'New password must be at least 8 characters long';
+			return;
+		}
+
+		if (newPassword !== confirmPassword) {
+			passwordError = 'New passwords do not match';
+			return;
+		}
+
+		if (currentPassword === newPassword) {
+			passwordError = 'New password must be different from current password';
+			return;
+		}
+
+		changingPassword = true;
+
+		try {
+			const response = await fetch('/api/auth/change-password', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					currentPassword,
+					newPassword
+				})
+			});
+
+			const data = await response.json();
+
+			if (data.success) {
+				passwordSuccess = true;
+				resetPasswordForm();
+				// Close modal after 2 seconds
+				setTimeout(() => {
+					closeChangePasswordModal();
+				}, 2000);
+			} else {
+				passwordError = data.message || 'Failed to change password';
+			}
+		} catch (err) {
+			passwordError = 'Failed to change password';
+		} finally {
+			changingPassword = false;
+		}
 	}
 
 	function getInitials(user: { first_name?: string; last_name?: string; email: string }): string {
@@ -131,6 +215,13 @@
 								<div class="user-email">{$authStore.user.email}</div>
 								<div class="user-tier">{$authStore.user.subscription_tier}</div>
 							</div>
+							<button class="dropdown-item" onclick={openChangePasswordModal} role="menuitem">
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+									<path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+								</svg>
+								Change Password
+							</button>
 							<button class="logout-button" onclick={handleLogout} role="menuitem">
 								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 									<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -154,6 +245,86 @@
 		</div>
 	</div>
 </header>
+
+<!-- Change Password Modal -->
+{#if showChangePasswordModal}
+	<div class="modal-overlay" onclick={closeChangePasswordModal}>
+		<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+			<div class="modal-header">
+				<h3>Change Password</h3>
+				<button class="modal-close" onclick={closeChangePasswordModal}>×</button>
+			</div>
+			<div class="modal-body">
+				{#if passwordSuccess}
+					<div class="success-message">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<polyline points="20 6 9 17 4 12"></polyline>
+						</svg>
+						Password changed successfully!
+					</div>
+				{:else}
+					<form onsubmit={(e) => { e.preventDefault(); handleChangePassword(); }}>
+						{#if passwordError}
+							<div class="error-message">
+								{passwordError}
+							</div>
+						{/if}
+
+						<div class="form-group">
+							<label for="current-password">Current Password</label>
+							<input
+								id="current-password"
+								type="password"
+								bind:value={currentPassword}
+								placeholder="Enter current password"
+								disabled={changingPassword}
+								required
+							/>
+						</div>
+
+						<div class="form-group">
+							<label for="new-password">New Password</label>
+							<input
+								id="new-password"
+								type="password"
+								bind:value={newPassword}
+								placeholder="Enter new password (min. 8 characters)"
+								disabled={changingPassword}
+								required
+							/>
+						</div>
+
+						<div class="form-group">
+							<label for="confirm-password">Confirm New Password</label>
+							<input
+								id="confirm-password"
+								type="password"
+								bind:value={confirmPassword}
+								placeholder="Confirm new password"
+								disabled={changingPassword}
+								required
+							/>
+						</div>
+
+						<div class="modal-footer">
+							<button type="button" class="modal-btn secondary" onclick={closeChangePasswordModal} disabled={changingPassword}>
+								Cancel
+							</button>
+							<button type="submit" class="modal-btn primary" disabled={changingPassword}>
+								{#if changingPassword}
+									<span class="loading-spinner small"></span>
+									Changing...
+								{:else}
+									Change Password
+								{/if}
+							</button>
+						</div>
+					</form>
+				{/if}
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.app-bar {
@@ -347,6 +518,26 @@
 		text-transform: capitalize;
 	}
 
+	.dropdown-item {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		width: 100%;
+		padding: var(--spacing-sm);
+		background: none;
+		border: none;
+		color: var(--color-text-primary);
+		cursor: pointer;
+		border-radius: var(--radius-sm);
+		transition: background-color 0.2s ease;
+		font-size: 0.875rem;
+		text-align: left;
+	}
+
+	.dropdown-item:hover {
+		background: #f1f5f9;
+	}
+
 	.logout-button {
 		display: flex;
 		align-items: center;
@@ -360,10 +551,198 @@
 		border-radius: var(--radius-sm);
 		transition: background-color 0.2s ease;
 		font-size: 0.875rem;
+		text-align: left;
+		margin-top: var(--spacing-xs);
+		border-top: 1px solid var(--color-border);
+		padding-top: var(--spacing-sm);
 	}
 
 	.logout-button:hover {
 		background: #f1f5f9;
+	}
+
+	/* Modal Styles */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 2000;
+		padding: 1rem;
+	}
+
+	.modal-content {
+		background: white;
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-lg);
+		max-width: 450px;
+		width: 100%;
+		max-height: 90vh;
+		overflow-y: auto;
+	}
+
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1.5rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.modal-header h3 {
+		margin: 0;
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.modal-close {
+		background: none;
+		border: none;
+		font-size: 1.5rem;
+		cursor: pointer;
+		color: var(--color-text-secondary);
+		padding: 0;
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--radius-sm);
+		transition: background-color 0.2s ease;
+	}
+
+	.modal-close:hover {
+		background-color: #f3f4f6;
+	}
+
+	.modal-body {
+		padding: 1.5rem;
+	}
+
+	.form-group {
+		margin-bottom: 1.25rem;
+	}
+
+	.form-group label {
+		display: block;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin-bottom: 0.5rem;
+		font-size: 0.875rem;
+	}
+
+	.form-group input {
+		width: 100%;
+		padding: 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		font-size: 1rem;
+		transition: border-color 0.2s ease, box-shadow 0.2s ease;
+		box-sizing: border-box;
+	}
+
+	.form-group input:focus {
+		outline: none;
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
+	}
+
+	.form-group input:disabled {
+		background-color: #f3f4f6;
+		cursor: not-allowed;
+	}
+
+	.error-message {
+		background-color: #fef2f2;
+		color: #dc2626;
+		padding: 0.75rem;
+		border-radius: var(--radius-md);
+		font-size: 0.875rem;
+		border: 1px solid #fecaca;
+		margin-bottom: 1rem;
+	}
+
+	.success-message {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		background-color: #f0fdf4;
+		color: #16a34a;
+		padding: 1rem;
+		border-radius: var(--radius-md);
+		font-size: 0.875rem;
+		border: 1px solid #bbf7d0;
+		font-weight: 500;
+	}
+
+	.modal-footer {
+		display: flex;
+		gap: 0.75rem;
+		justify-content: flex-end;
+		margin-top: 1.5rem;
+	}
+
+	.modal-btn {
+		padding: 0.75rem 1.5rem;
+		border: none;
+		border-radius: var(--radius-md);
+		font-weight: 600;
+		cursor: pointer;
+		transition: background-color 0.2s ease;
+		font-size: 0.875rem;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.modal-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.modal-btn.primary {
+		background-color: var(--color-primary);
+		color: white;
+	}
+
+	.modal-btn.primary:hover:not(:disabled) {
+		background-color: #16a34a;
+	}
+
+	.modal-btn.secondary {
+		background-color: #f3f4f6;
+		color: var(--color-text-primary);
+	}
+
+	.modal-btn.secondary:hover:not(:disabled) {
+		background-color: #e5e7eb;
+	}
+
+	.loading-spinner {
+		width: 16px;
+		height: 16px;
+		border: 2px solid rgba(255, 255, 255, 0.3);
+		border-top: 2px solid white;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+
+	.loading-spinner.small {
+		width: 14px;
+		height: 14px;
+		border-width: 2px;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 	
 	@media (max-width: 768px) {

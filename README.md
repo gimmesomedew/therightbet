@@ -26,7 +26,8 @@ A comprehensive sports betting analytics platform built with SvelteKit, providin
 - Node.js 20.19+ or 22.12+ or 24+
 - npm or yarn
 - Neon PostgreSQL database
-- SportsDataIO API key
+- Sportradar API key (for game schedules and data)
+- The Odds API key (for betting odds and spreads) - [Get API Key](https://the-odds-api.com/)
 
 ### Installation
 
@@ -47,6 +48,10 @@ Create a `.env` file in the root directory with the following variables:
 ```env
 # Database Configuration
 DATABASE_URL=postgresql://username:password@hostname:port/database
+
+# API Keys
+SPORTRADAR_API_KEY=your_sportradar_api_key
+ODDS_API_KEY=your_odds_api_key
 
 # JWT Configuration
 JWT_SECRET=your-super-secret-jwt-key-here-change-this-in-production

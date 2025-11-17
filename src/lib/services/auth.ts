@@ -64,6 +64,30 @@ class AuthService {
 		return result;
 	}
 
+	// Generate a secure temporary password
+	private generateTemporaryPassword(): string {
+		const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+		const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+		const numbers = '0123456789';
+		const special = '!@#$%^&*';
+		const allChars = lowercase + uppercase + numbers + special;
+		
+		let password = '';
+		// Ensure at least one of each type
+		password += lowercase.charAt(Math.floor(Math.random() * lowercase.length));
+		password += uppercase.charAt(Math.floor(Math.random() * uppercase.length));
+		password += numbers.charAt(Math.floor(Math.random() * numbers.length));
+		password += special.charAt(Math.floor(Math.random() * special.length));
+		
+		// Fill the rest randomly (total length 12)
+		for (let i = password.length; i < 12; i++) {
+			password += allChars.charAt(Math.floor(Math.random() * allChars.length));
+		}
+		
+		// Shuffle the password
+		return password.split('').sort(() => Math.random() - 0.5).join('');
+	}
+
 	// Hash password
 	private async hashPassword(password: string): Promise<string> {
 		const saltRounds = 12;
@@ -377,6 +401,65 @@ class AuthService {
 		return await this.getUserById(decoded.userId);
 	}
 
+	// Change user password
+	async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ success: boolean; message?: string }> {
+		try {
+			// Validate new password length
+			if (newPassword.length < 8) {
+				return {
+					success: false,
+					message: 'New password must be at least 8 characters long'
+				};
+			}
+
+			// Get user with password hash
+			const user = await db`
+				SELECT id, password_hash 
+				FROM users 
+				WHERE id = ${userId} AND is_active = true
+			`;
+
+			if (user.length === 0) {
+				return {
+					success: false,
+					message: 'User not found'
+				};
+			}
+
+			const userData = user[0];
+
+			// Verify current password
+			const passwordValid = await this.verifyPassword(currentPassword, userData.password_hash);
+			if (!passwordValid) {
+				return {
+					success: false,
+					message: 'Current password is incorrect'
+				};
+			}
+
+			// Hash new password
+			const newPasswordHash = await this.hashPassword(newPassword);
+
+			// Update password
+			await db`
+				UPDATE users 
+				SET password_hash = ${newPasswordHash}, updated_at = NOW()
+				WHERE id = ${userId}
+			`;
+
+			return {
+				success: true,
+				message: 'Password changed successfully'
+			};
+		} catch (error) {
+			console.error('Error changing password:', error);
+			return {
+				success: false,
+				message: 'Failed to change password'
+			};
+		}
+	}
+
 	// Get all invites (admin function)
 	async getInvites(): Promise<Invite[]> {
 		try {
@@ -401,6 +484,125 @@ class AuthService {
 		} catch (error) {
 			console.error('Error getting invites:', error);
 			return [];
+		}
+	}
+
+	// Get all users (admin function)
+	async getAllUsers(): Promise<User[]> {
+		try {
+			const users = await db`
+				SELECT id, email, first_name, last_name, subscription_tier, 
+					   is_active, created_at, updated_at
+				FROM users
+				ORDER BY created_at DESC
+			`;
+
+			return users.map(user => ({
+				id: user.id,
+				email: user.email,
+				first_name: user.first_name,
+				last_name: user.last_name,
+				subscription_tier: user.subscription_tier,
+				created_at: user.created_at
+			}));
+		} catch (error) {
+			console.error('Error getting users:', error);
+			return [];
+		}
+	}
+
+	// Convert an invite to an active user (admin function)
+	async convertInviteToUser(inviteCode: string): Promise<{ success: boolean; user?: User; temporaryPassword?: string; message?: string }> {
+		try {
+			// Get the invite
+			const invite = await db`
+				SELECT email, used, expires_at 
+				FROM invites 
+				WHERE invite_code = ${inviteCode}
+			`;
+
+			if (invite.length === 0) {
+				return {
+					success: false,
+					message: 'Invite not found'
+				};
+			}
+
+			const inviteData = invite[0];
+
+			// Check if invite is already used
+			if (inviteData.used) {
+				return {
+					success: false,
+					message: 'Invite has already been used'
+				};
+			}
+
+			// Check if invite is expired
+			if (new Date(inviteData.expires_at) < new Date()) {
+				return {
+					success: false,
+					message: 'Invite has expired'
+				};
+			}
+
+			// Check if user already exists
+			const existingUser = await db`
+				SELECT id FROM users WHERE email = ${inviteData.email}
+			`;
+			
+			if (existingUser.length > 0) {
+				return {
+					success: false,
+					message: 'User with this email already exists'
+				};
+			}
+
+			// Generate temporary password
+			const temporaryPassword = this.generateTemporaryPassword();
+			const passwordHash = await this.hashPassword(temporaryPassword);
+
+			// Create user
+			const newUser = await db`
+				INSERT INTO users (
+					email, password_hash, first_name, last_name, 
+					subscription_tier, created_at, updated_at
+				)
+				VALUES (
+					${inviteData.email}, ${passwordHash}, null, null,
+					'premium', NOW(), NOW()
+				)
+				RETURNING id, email, first_name, last_name, subscription_tier, created_at
+			`;
+
+			// Mark invite as used
+			await db`
+				UPDATE invites 
+				SET used = true, used_at = NOW() 
+				WHERE invite_code = ${inviteCode}
+			`;
+
+			const user = newUser[0];
+
+			return {
+				success: true,
+				user: {
+					id: user.id,
+					email: user.email,
+					first_name: user.first_name,
+					last_name: user.last_name,
+					subscription_tier: user.subscription_tier,
+					created_at: user.created_at
+				},
+				temporaryPassword,
+				message: 'User created successfully'
+			};
+		} catch (error) {
+			console.error('Error converting invite to user:', error);
+			return {
+				success: false,
+				message: 'Failed to convert invite to user'
+			};
 		}
 	}
 }

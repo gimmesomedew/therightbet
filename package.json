@@ -21,6 +21,10 @@
 		"sync:wnba": "node scripts/sync-wnba-simple.js",
 		"sync:games": "node scripts/sync-todays-games.js",
 		"sync:nfl": "node scripts/sync-nfl-touchdowns.js",
+		"sync:nfl-week11": "node scripts/sync-nfl-week11-matchups.js",
+		"sync:ncaa": "node scripts/sync-ncaa-matchups.js",
+		"sync:ncaa-records": "node scripts/sync-ncaa-records-cfbd.js",
+		"sync:ncaa-records-sportsdataio": "node scripts/sync-ncaa-records-sportsdataio.js",
 		"create:admin": "node scripts/create-admin.js"
 	},
 	"devDependencies": {
