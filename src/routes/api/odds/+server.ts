@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { OddsAPIService } from '$lib/services/odds-api.js';
-import { ODDS_API_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
 /**
  * Get odds from The Odds API
@@ -9,6 +9,8 @@ import { ODDS_API_KEY } from '$env/static/private';
  */
 export const GET: RequestHandler = async ({ url }) => {
 	try {
+		const ODDS_API_KEY = env.ODDS_API_KEY;
+		
 		if (!ODDS_API_KEY) {
 			return json({
 				success: false,
