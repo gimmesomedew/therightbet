@@ -358,7 +358,7 @@
 				</span>
 			</div>
 			<div class="export-buttons">
-				<button class="export-btn" on:click={() => exportToPDF('first-td')} title="Export First TD Predictions">
+				<button class="export-btn" onclick={() => exportToPDF('first-td')} title="Export First TD Predictions">
 					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
 						<polyline points="7 10 12 15 17 10"></polyline>
@@ -367,7 +367,7 @@
 					Export First TD
 				</button>
 				{#if allAnyTimePredictions.length > 0}
-					<button class="export-btn" on:click={() => exportToPDF('any-time')} title="Export Any-Time TD Predictions">
+					<button class="export-btn" onclick={() => exportToPDF('any-time')} title="Export Any-Time TD Predictions">
 						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
 							<polyline points="7 10 12 15 17 10"></polyline>
@@ -375,7 +375,7 @@
 						</svg>
 						Export Any-Time TD
 					</button>
-					<button class="export-btn export-btn-primary" on:click={() => exportToPDF('both')} title="Export Both Tables">
+					<button class="export-btn export-btn-primary" onclick={() => exportToPDF('both')} title="Export Both Tables">
 						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
 							<polyline points="7 10 12 15 17 10"></polyline>
