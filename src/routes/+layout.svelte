@@ -5,6 +5,7 @@
 	import '../app.css';
 	import AppBar from '$lib/components/AppBar.svelte';
 	import NavigationDrawer from '$lib/components/NavigationDrawer.svelte';
+	import MobileTabBar from '$lib/components/MobileTabBar.svelte';
 	import { authStore } from '$lib/stores/auth.js';
 	import type { PageData } from './$types';
 
@@ -40,7 +41,7 @@
 	<meta name="description" content="Professional sports betting analytics and insights for WNBA and NFL" />
 </svelte:head>
 
-<div class="app-layout">
+	<div class="app-layout">
 	<AppBar ontoggleDrawer={toggleDrawer} />
 	
 	<div class="main-content">
@@ -52,6 +53,10 @@
 			{@render children?.()}
 		</main>
 	</div>
+	
+	{#if showSidebar}
+		<MobileTabBar />
+	{/if}
 </div>
 
 <style>
@@ -83,5 +88,12 @@
 	.content-area.no-sidebar {
 		margin-left: 0;
 		width: 100%;
+	}
+	
+	/* Add padding for mobile tab bar */
+	@media (max-width: 767px) {
+		.content-area {
+			padding-bottom: 64px;
+		}
 	}
 </style>
