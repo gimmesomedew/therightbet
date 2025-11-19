@@ -25,7 +25,14 @@
 		"sync:ncaa": "node scripts/sync-ncaa-matchups.js",
 		"sync:ncaa-records": "node scripts/sync-ncaa-records-cfbd.js",
 		"sync:ncaa-records-sportsdataio": "node scripts/sync-ncaa-records-sportsdataio.js",
-		"create:admin": "node scripts/create-admin.js"
+		"sync:nba": "node scripts/sync-nba-matchups.js",
+		"create:admin": "node scripts/create-admin.js",
+		"test:defensive-stats": "node scripts/test-sportradar-defensive-stats.js",
+		"test:sportsdataio-defensive": "node scripts/test-sportsdataio-nfl-defensive.js",
+		"create:nfl-defensive-table": "node scripts/create-nfl-defensive-stats-table.js",
+		"sync:nfl-defensive": "node scripts/sync-nfl-defensive-stats.js",
+		"create:nfl-receiving-yards-table": "node scripts/create-nfl-receiving-yards-table.js",
+		"sync:nfl-receiving-yards": "node scripts/sync-nfl-receiving-yards.js"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^6.0.0",

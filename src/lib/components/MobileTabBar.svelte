@@ -8,6 +8,11 @@
 			icon: 'basketball'
 		},
 		{
+			title: 'NBA',
+			href: '/sports/nba',
+			icon: 'basketball'
+		},
+		{
 			title: 'NFL',
 			href: '/sports/nfl',
 			icon: 'football'

@@ -207,6 +207,27 @@ CREATE TABLE nfl_player_touchdowns (
     UNIQUE(season, season_type, week, team_abbreviation, player_id)
 );
 
+-- NFL Player Receiving Yards table
+CREATE TABLE IF NOT EXISTS nfl_player_receiving_yards (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    week_id UUID REFERENCES nfl_weeks(id) ON DELETE CASCADE,
+    season INTEGER NOT NULL,
+    season_type VARCHAR(10) NOT NULL,
+    week INTEGER NOT NULL,
+    team_abbreviation VARCHAR(10) NOT NULL,
+    player_id VARCHAR(100) NOT NULL,
+    player_name VARCHAR(200) NOT NULL,
+    position VARCHAR(10),
+    receptions INTEGER DEFAULT 0,
+    receiving_yards INTEGER DEFAULT 0,
+    receiving_touchdowns INTEGER DEFAULT 0,
+    targets INTEGER DEFAULT 0,
+    longest_reception INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(season, season_type, week, team_abbreviation, player_id)
+);
+
 -- Indexes for NFL touchdown tables
 CREATE INDEX idx_nfl_weeks_season_type_week ON nfl_weeks(season, season_type, week);
 CREATE INDEX idx_nfl_team_touchdowns_week ON nfl_team_touchdowns(week_id);
@@ -214,6 +235,13 @@ CREATE INDEX idx_nfl_team_touchdowns_season_week ON nfl_team_touchdowns(season, 
 CREATE INDEX idx_nfl_player_touchdowns_team ON nfl_player_touchdowns(team_touchdown_id);
 CREATE INDEX idx_nfl_player_touchdowns_week ON nfl_player_touchdowns(week_id);
 CREATE INDEX idx_nfl_player_touchdowns_season_week ON nfl_player_touchdowns(season, season_type, week);
+
+-- Indexes for NFL receiving yards table
+CREATE INDEX idx_nfl_receiving_yards_week ON nfl_player_receiving_yards(week_id);
+CREATE INDEX idx_nfl_receiving_yards_season_week ON nfl_player_receiving_yards(season, season_type, week);
+CREATE INDEX idx_nfl_receiving_yards_team ON nfl_player_receiving_yards(team_abbreviation);
+CREATE INDEX idx_nfl_receiving_yards_player ON nfl_player_receiving_yards(player_id);
+CREATE INDEX idx_nfl_receiving_yards_position ON nfl_player_receiving_yards(position);
 
 -- Create triggers for updated_at
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

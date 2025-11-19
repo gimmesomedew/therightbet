@@ -102,6 +102,28 @@
 		return line > 0 ? `+${line}` : `${line}`;
 	}
 
+	function calculateBreakevenPercentage(odds: string | null): number | null {
+		if (!odds) return null;
+		
+		// Parse American odds (e.g., "+150", "-150", "150", "-110")
+		const oddsNum = parseInt(odds);
+		if (isNaN(oddsNum)) return null;
+		
+		if (oddsNum > 0) {
+			// Positive odds: breakeven % = 100 / (odds + 100)
+			return 100 / (oddsNum + 100);
+		} else {
+			// Negative odds: breakeven % = |odds| / (|odds| + 100)
+			return Math.abs(oddsNum) / (Math.abs(oddsNum) + 100);
+		}
+	}
+
+	function formatBreakevenPercentage(odds: string | null): string {
+		const percentage = calculateBreakevenPercentage(odds);
+		if (percentage === null) return '';
+		return `${(percentage * 100).toFixed(1)}%`;
+	}
+
 	function formatGameTime(dateString: string): string {
 		const date = new Date(dateString);
 		return date.toLocaleDateString('en-US', {
@@ -452,7 +474,10 @@
 										<div class="line-values">
 											<span class="line-team">{game.awayTeam.abbreviation} {formatSpreadLine(game.bettingLines.spread.line)}</span>
 											{#if game.bettingLines.spread.awayOdds}
-												<span class="line-odds">({game.bettingLines.spread.awayOdds})</span>
+												<span class="line-odds">
+													({game.bettingLines.spread.awayOdds})
+													<span class="breakeven-percentage">{formatBreakevenPercentage(game.bettingLines.spread.awayOdds)}</span>
+												</span>
 											{/if}
 										</div>
 									</div>
@@ -463,7 +488,10 @@
 										<div class="line-values">
 											<span class="line-team">O/U {game.bettingLines.total.line}</span>
 											{#if game.bettingLines.total.overOdds}
-												<span class="line-odds">({game.bettingLines.total.overOdds})</span>
+												<span class="line-odds">
+													({game.bettingLines.total.overOdds})
+													<span class="breakeven-percentage">{formatBreakevenPercentage(game.bettingLines.total.overOdds)}</span>
+												</span>
 											{/if}
 										</div>
 									</div>
@@ -473,8 +501,19 @@
 										<span class="line-label">Moneyline</span>
 										<div class="line-values">
 											<span class="line-team">
-												{game.awayTeam.abbreviation} {game.bettingLines.moneyline.away || '—'} / 
-												{game.homeTeam.abbreviation} {game.bettingLines.moneyline.home || '—'}
+												{#if game.bettingLines.moneyline.away}
+													{game.awayTeam.abbreviation} {game.bettingLines.moneyline.away}
+													<span class="breakeven-percentage">{formatBreakevenPercentage(game.bettingLines.moneyline.away)}</span>
+												{:else}
+													{game.awayTeam.abbreviation} —
+												{/if}
+												{' / '}
+												{#if game.bettingLines.moneyline.home}
+													{game.homeTeam.abbreviation} {game.bettingLines.moneyline.home}
+													<span class="breakeven-percentage">{formatBreakevenPercentage(game.bettingLines.moneyline.home)}</span>
+												{:else}
+													{game.homeTeam.abbreviation} —
+												{/if}
 											</span>
 										</div>
 									</div>
@@ -1188,6 +1227,18 @@
 	.line-odds {
 		font-size: 0.75rem;
 		color: var(--color-text-secondary);
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.breakeven-percentage {
+		font-size: 0.7rem;
+		color: var(--color-primary);
+		font-weight: 600;
+		background: rgba(59, 130, 246, 0.1);
+		padding: 0.125rem 0.375rem;
+		border-radius: var(--radius-sm);
 	}
 
 	.no-lines {

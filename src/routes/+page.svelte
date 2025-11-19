@@ -114,6 +114,21 @@
 </script>
 
 <div class="homepage">
+	<!-- Out of Season Banner -->
+	<div class="out-of-season-banner">
+		<div class="banner-content">
+			<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<circle cx="12" cy="12" r="10"></circle>
+				<line x1="12" y1="8" x2="12" y2="12"></line>
+				<line x1="12" y1="16" x2="12.01" y2="16"></line>
+			</svg>
+			<div class="banner-text">
+				<strong>WNBA Out of Season</strong>
+				<span>The WNBA is currently out of season. The system is not tracking data at this time.</span>
+			</div>
+		</div>
+	</div>
+
 	<!-- Stats Section -->
 	<div class="stats-section">
 		<div class="stats-grid">
@@ -291,6 +306,71 @@
 		padding: 1rem 1.5rem;
 		background-color: #f8fafc;
 		min-height: calc(100vh - 64px);
+	}
+
+	/* Out of Season Banner */
+	.out-of-season-banner {
+		background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+		border: 1px solid #f59e0b;
+		border-radius: 0.5rem;
+		padding: 1rem 1.5rem;
+		margin-bottom: 1.5rem;
+		box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+	}
+
+	.banner-content {
+		display: flex;
+		align-items: flex-start;
+		gap: 1rem;
+	}
+
+	.banner-content svg {
+		flex-shrink: 0;
+		color: #92400e;
+		margin-top: 0.125rem;
+	}
+
+	.banner-text {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.banner-text strong {
+		font-size: 1rem;
+		font-weight: 600;
+		color: #92400e;
+		line-height: 1.5;
+	}
+
+	.banner-text span {
+		font-size: 0.875rem;
+		color: #78350f;
+		line-height: 1.5;
+	}
+
+	@media (max-width: 768px) {
+		.out-of-season-banner {
+			padding: 0.875rem 1rem;
+		}
+
+		.banner-content {
+			gap: 0.75rem;
+		}
+
+		.banner-content svg {
+			width: 20px;
+			height: 20px;
+		}
+
+		.banner-text strong {
+			font-size: 0.9375rem;
+		}
+
+		.banner-text span {
+			font-size: 0.8125rem;
+		}
 	}
 
 	/* Stats Section */

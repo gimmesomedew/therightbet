@@ -11,6 +11,12 @@
 			badge: null
 		},
 		{
+			title: 'NBA',
+			href: '/sports/nba',
+			icon: 'basketball',
+			badge: null
+		},
+		{
 			title: 'NFL',
 			href: '/sports/nfl',
 			icon: 'football',
@@ -31,6 +37,12 @@
 	];
 	
 	const toolsItems = [
+		{
+			title: 'Hold Calculator',
+			href: '/tools/hold-calculator',
+			icon: 'calculator',
+			active: false
+		},
 		{
 			title: 'Analytics',
 			href: '/analytics',
@@ -62,6 +74,7 @@
 			basketball: 'M12 2a10 10 0 100 20 10 10 0 000-20z M12 2a10 10 0 100 20 10 10 0 000-20z M2 12h20 M12 2a10 10 0 100 20 10 10 0 000-20z',
 			football: 'M12 2a10 10 0 100 20 10 10 0 000-20z M12 2a10 10 0 100 20 10 10 0 000-20z M2 12h20 M12 2a10 10 0 100 20 10 10 0 000-20z',
 			baseball: 'M12 2a10 10 0 100 20 10 10 0 000-20z M12 2a10 10 0 100 20 10 10 0 000-20z M2 12h20 M12 2a10 10 0 100 20 10 10 0 000-20z',
+			calculator: 'M9 7h6M9 11h6M9 15h3M5 3h14a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z',
 			'bar-chart': 'M12 20V10 M18 20V4 M6 20v-4',
 			clock: 'M12 2a10 10 0 100 20 10 10 0 000-20z M12 6v6l4 2',
 			star: 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',
@@ -116,7 +129,7 @@
 			<ul class="nav-list">
 				{#each toolsItems as item}
 					<li class="nav-item">
-						<a href={item.href} class="nav-link" class:active={$page.url.pathname === item.href}>
+						<a href={item.href} class="nav-link" class:active={$page.url.pathname === item.href || $page.url.pathname.startsWith(item.href + '/')}>
 							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<path d={getIconPath(item.icon)} />
 							</svg>

@@ -3,8 +3,8 @@
 		id: string;
 		gameDate: string;
 		status: string;
-		homeTeam: { name: string; abbreviation: string; city: string; conference: string | null; wins: number; losses: number; score: number };
-		awayTeam: { name: string; abbreviation: string; city: string; conference: string | null; wins: number; losses: number; score: number };
+		homeTeam: { name: string; abbreviation: string; city: string; score: number };
+		awayTeam: { name: string; abbreviation: string; city: string; score: number };
 		bettingLines: {
 			spread: { line: number | null; homeOdds: string | null; awayOdds: string | null };
 			total: { line: number | null; overOdds: string | null; underOdds: string | null };
@@ -17,36 +17,20 @@
 	let weekStart = $state<string>('');
 	let weekEnd = $state<string>('');
 	let searchQuery = $state('');
-	let selectedConference = $state<string>('all');
 	let showFavoritesOnly = $state(false);
 	let favoriteGameIds = $state<Set<string>>(new Set());
 	let togglingFavorite = $state<string | null>(null);
+	let syncing = $state(false);
+	let syncMessage = $state<string | null>(null);
+	let syncError = $state<string | null>(null);
 
-	// Get unique conferences from matchups
-	const availableConferences = $derived.by(() => {
-		const conferences = new Set<string>();
-		allMatchups.forEach(game => {
-			if (game.homeTeam.conference) conferences.add(game.homeTeam.conference);
-			if (game.awayTeam.conference) conferences.add(game.awayTeam.conference);
-		});
-		return Array.from(conferences).sort();
-	});
-
-	// Filter matchups based on search query, conference, and favorites
+	// Filter matchups based on search query and favorites
 	const matchups = $derived.by(() => {
 		let filtered = allMatchups;
 
 		// Apply favorites filter first
 		if (showFavoritesOnly) {
 			filtered = filtered.filter(game => favoriteGameIds.has(game.id));
-		}
-
-		// Apply conference filter
-		if (selectedConference !== 'all') {
-			filtered = filtered.filter(game => 
-				game.homeTeam.conference === selectedConference ||
-				game.awayTeam.conference === selectedConference
-			);
 		}
 
 		// Apply search query filter
@@ -76,7 +60,7 @@
 	async function loadMatchups() {
 		loading = true;
 		try {
-			const response = await fetch('/api/ncaa/matchups');
+			const response = await fetch('/api/nba/matchups');
 			if (!response.ok) {
 				throw new Error(`HTTP error! status: ${response.status}`);
 			}
@@ -89,10 +73,295 @@
 				console.error('API returned error:', result.message);
 			}
 		} catch (error) {
-			console.error('Failed to load NCAA matchups:', error);
+			console.error('Failed to load NBA matchups:', error);
 		} finally {
 			loading = false;
 		}
+	}
+
+	async function syncNBA() {
+		syncing = true;
+		syncMessage = null;
+		syncError = null;
+
+		try {
+			const response = await fetch('/api/nba/sync', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				}
+			});
+
+			const result = await response.json();
+
+			if (result.success) {
+				syncMessage = 'NBA data synced successfully! Refreshing...';
+				// Reload matchups after a short delay
+				setTimeout(() => {
+					loadMatchups();
+					syncMessage = null;
+				}, 1500);
+			} else {
+				syncError = result.message || 'Failed to sync NBA data';
+			}
+		} catch (error: any) {
+			syncError = error.message || 'Failed to sync NBA data';
+			console.error('Sync error:', error);
+		} finally {
+			syncing = false;
+		}
+	}
+
+	function exportToPDF() {
+		// Create a new window for printing
+		const printWindow = window.open('', '_blank');
+		if (!printWindow) {
+			alert('Please allow pop-ups to export PDF');
+			return;
+		}
+
+		const dateRange = weekStart && weekEnd 
+			? `${formatWeekRange(weekStart, weekEnd)}`
+			: new Date().toLocaleDateString();
+
+		let htmlContent = `
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<meta charset="UTF-8">
+				<title>NBA Games & Odds - ${dateRange}</title>
+				<style>
+					@page {
+						size: letter;
+						margin: 0.5in;
+					}
+					body {
+						font-family: Arial, sans-serif;
+						font-size: 10pt;
+						color: #000;
+						margin: 0;
+						padding: 0;
+					}
+					.header {
+						text-align: center;
+						margin-bottom: 20px;
+						border-bottom: 2px solid #000;
+						padding-bottom: 10px;
+					}
+					.header h1 {
+						margin: 0 0 5px 0;
+						font-size: 18pt;
+					}
+					.header p {
+						margin: 0;
+						font-size: 10pt;
+					}
+					.game-card {
+						margin-bottom: 20px;
+						border: 1px solid #ccc;
+						border-radius: 4px;
+						padding: 12px;
+						page-break-inside: avoid;
+					}
+					.game-header {
+						font-weight: bold;
+						font-size: 12pt;
+						margin-bottom: 8px;
+						border-bottom: 1px solid #ddd;
+						padding-bottom: 5px;
+					}
+					.teams {
+						display: flex;
+						justify-content: space-between;
+						margin-bottom: 10px;
+						font-size: 11pt;
+					}
+					.team {
+						font-weight: bold;
+					}
+					.home-badge {
+						display: inline-block;
+						background: #3b82f6;
+						color: white;
+						padding: 2px 6px;
+						border-radius: 3px;
+						font-size: 8pt;
+						margin-left: 5px;
+					}
+					.betting-lines {
+						margin-top: 10px;
+					}
+					.betting-line {
+						margin-bottom: 8px;
+						padding: 6px;
+						background: #f9fafb;
+						border-radius: 3px;
+					}
+					.line-label {
+						font-weight: bold;
+						font-size: 9pt;
+						margin-bottom: 4px;
+					}
+					.line-values {
+						font-size: 9pt;
+						display: flex;
+						justify-content: space-between;
+					}
+					.odds {
+						color: #666;
+					}
+					.breakeven {
+						color: #3b82f6;
+						font-weight: 600;
+						margin-left: 5px;
+					}
+					.hold-badge {
+						color: #dc2626;
+						font-weight: 600;
+						margin-left: 10px;
+					}
+					.no-lines {
+						color: #999;
+						font-style: italic;
+						font-size: 9pt;
+					}
+					.footer {
+						margin-top: 30px;
+						padding-top: 10px;
+						border-top: 1px solid #ccc;
+						font-size: 8pt;
+						color: #666;
+						text-align: center;
+					}
+				</style>
+			</head>
+			<body>
+				<div class="header">
+					<h1>NBA Games & Betting Odds</h1>
+					<p>${dateRange}</p>
+					<p>Generated: ${new Date().toLocaleString()}</p>
+				</div>
+		`;
+
+		// Add each game
+		matchups.forEach((game, index) => {
+			const homeTeam = game.homeTeam;
+			const awayTeam = game.awayTeam;
+			const lines = game.bettingLines;
+
+			htmlContent += `
+				<div class="game-card">
+					<div class="game-header">
+						Game ${index + 1} - ${new Date(game.gameDate).toLocaleDateString()} ${new Date(game.gameDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+					</div>
+					<div class="teams">
+						<div class="team">
+							${awayTeam.city} ${awayTeam.name} (${awayTeam.abbreviation})
+							${awayTeam.score !== null ? ` - ${awayTeam.score}` : ''}
+						</div>
+						<div class="team">
+							${homeTeam.city} ${homeTeam.name} (${homeTeam.abbreviation})
+							<span class="home-badge">HOME</span>
+							${homeTeam.score !== null ? ` - ${homeTeam.score}` : ''}
+						</div>
+					</div>
+					<div class="betting-lines">
+			`;
+
+			// Spread
+			if (lines.spread.line !== null) {
+				const hold = lines.spread.awayOdds && lines.spread.homeOdds 
+					? formatHold(lines.spread.awayOdds, lines.spread.homeOdds)
+					: '';
+				htmlContent += `
+					<div class="betting-line">
+						<div class="line-label">
+							Spread ${hold ? `<span class="hold-badge">Hold: ${hold}</span>` : ''}
+						</div>
+						<div class="line-values">
+							<span>${awayTeam.abbreviation} ${formatSpreadLine(lines.spread.line)}</span>
+							${lines.spread.awayOdds ? `
+								<span class="odds">
+									(${lines.spread.awayOdds})
+									<span class="breakeven">${formatBreakevenPercentage(lines.spread.awayOdds)}</span>
+								</span>
+							` : ''}
+						</div>
+					</div>
+				`;
+			}
+
+			// Total
+			if (lines.total.line !== null) {
+				const hold = lines.total.overOdds && lines.total.underOdds 
+					? formatHold(lines.total.overOdds, lines.total.underOdds)
+					: '';
+				htmlContent += `
+					<div class="betting-line">
+						<div class="line-label">
+							Total (O/U) ${hold ? `<span class="hold-badge">Hold: ${hold}</span>` : ''}
+						</div>
+						<div class="line-values">
+							<span>O/U ${lines.total.line}</span>
+							${lines.total.overOdds ? `
+								<span class="odds">
+									Over (${lines.total.overOdds})
+									<span class="breakeven">${formatBreakevenPercentage(lines.total.overOdds)}</span>
+								</span>
+							` : ''}
+						</div>
+					</div>
+				`;
+			}
+
+			// Moneyline
+			if (lines.moneyline.away !== null || lines.moneyline.home !== null) {
+				const hold = lines.moneyline.away && lines.moneyline.home 
+					? formatHold(lines.moneyline.away, lines.moneyline.home)
+					: '';
+				htmlContent += `
+					<div class="betting-line">
+						<div class="line-label">
+							Moneyline ${hold ? `<span class="hold-badge">Hold: ${hold}</span>` : ''}
+						</div>
+						<div class="line-values">
+							<span>
+								${awayTeam.abbreviation}: ${lines.moneyline.away || '—'}
+								${lines.moneyline.away ? `<span class="breakeven">${formatBreakevenPercentage(lines.moneyline.away)}</span>` : ''}
+								/ ${homeTeam.abbreviation}: ${lines.moneyline.home || '—'}
+								${lines.moneyline.home ? `<span class="breakeven">${formatBreakevenPercentage(lines.moneyline.home)}</span>` : ''}
+							</span>
+						</div>
+					</div>
+				`;
+			}
+
+			if (lines.spread.line === null && lines.total.line === null && lines.moneyline.away === null) {
+				htmlContent += `<div class="no-lines">Betting lines not available</div>`;
+			}
+
+			htmlContent += `
+					</div>
+				</div>
+			`;
+		});
+
+		htmlContent += `
+				<div class="footer">
+					<p>TheRightBet - NBA Games & Odds Report</p>
+					<p>Total Games: ${matchups.length}</p>
+				</div>
+			</body>
+			</html>
+		`;
+
+		printWindow.document.write(htmlContent);
+		printWindow.document.close();
+		
+		// Wait for content to load, then trigger print
+		setTimeout(() => {
+			printWindow.print();
+		}, 250);
 	}
 
 	function formatSpreadLine(line: number | null): string {
@@ -120,6 +389,23 @@
 		const percentage = calculateBreakevenPercentage(odds);
 		if (percentage === null) return '';
 		return `${(percentage * 100).toFixed(1)}%`;
+	}
+
+	function calculateHold(odds1: string | null, odds2: string | null): number | null {
+		const prob1 = calculateBreakevenPercentage(odds1);
+		const prob2 = calculateBreakevenPercentage(odds2);
+		
+		if (prob1 === null || prob2 === null) return null;
+		
+		// Hold = (sum of probabilities - 1) × 100%
+		const totalProbability = prob1 + prob2;
+		return (totalProbability - 1) * 100;
+	}
+
+	function formatHold(odds1: string | null, odds2: string | null): string {
+		const hold = calculateHold(odds1, odds2);
+		if (hold === null) return '';
+		return `${hold.toFixed(2)}%`;
 	}
 
 	function formatGameTime(dateString: string): string {
@@ -194,22 +480,92 @@
 	}
 </script>
 
-<div class="ncaa-page">
+<div class="nba-page">
 	<header class="page-header">
 		<div>
-			<h1>NCAA Football</h1>
-			<p class="subtitle">Division I Matchups & Spreads</p>
+			<h1>NBA</h1>
+			<p class="subtitle">Matchups & Spreads</p>
 		</div>
 		<div class="meta">
 			{#if weekStart && weekEnd}
-				<span class="week-label">Current Week: {formatWeekRange(weekStart, weekEnd)}</span>
+				<span class="week-label">This Week: {formatWeekRange(weekStart, weekEnd)}</span>
 			{/if}
+			<div class="header-actions">
+				<button
+					type="button"
+					onclick={exportToPDF}
+					disabled={matchups.length === 0}
+					class="export-button"
+					aria-label="Export to PDF"
+					title="Export games and odds to PDF"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+						<polyline points="7 10 12 15 17 10"></polyline>
+						<line x1="12" y1="15" x2="12" y2="3"></line>
+					</svg>
+					<span>Export PDF</span>
+				</button>
+				<button
+					type="button"
+					onclick={syncNBA}
+					disabled={syncing}
+					class="sync-button"
+					class:syncing={syncing}
+					aria-label="Sync NBA data"
+					title="Sync NBA games and odds data"
+				>
+					{#if syncing}
+						<svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+						</svg>
+						<span>Syncing...</span>
+					{:else}
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 1 1 6.219-8.56M22 12.5a10 10 0 1 1-6.219 8.56"/>
+						</svg>
+						<span>Sync Data</span>
+					{/if}
+				</button>
+			</div>
 		</div>
 	</header>
 
+	{#if syncMessage}
+		<div class="sync-message success" role="alert">
+			<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+				<polyline points="22 4 12 14.01 9 11.01"/>
+			</svg>
+			<span>{syncMessage}</span>
+		</div>
+	{/if}
+
+	{#if syncError}
+		<div class="sync-message error" role="alert">
+			<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<circle cx="12" cy="12" r="10"/>
+				<line x1="12" y1="8" x2="12" y2="12"/>
+				<line x1="12" y1="16" x2="12.01" y2="16"/>
+			</svg>
+			<span>{syncError}</span>
+			<button
+				type="button"
+				onclick={() => syncError = null}
+				class="dismiss-error"
+				aria-label="Dismiss error"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<line x1="18" y1="6" x2="6" y2="18"/>
+					<line x1="6" y1="6" x2="18" y2="18"/>
+				</svg>
+			</button>
+		</div>
+	{/if}
+
 	<section class="matchups-section" aria-live="polite">
 		<div class="section-header">
-			<h2>Current Week's Matchups</h2>
+			<h2>Today's Games</h2>
 			<div class="search-controls">
 				<div class="filters-row">
 					<div class="search-input-wrapper">
@@ -238,16 +594,6 @@
 							</button>
 						{/if}
 					</div>
-					<select
-						bind:value={selectedConference}
-						class="conference-filter"
-						aria-label="Filter by conference"
-					>
-						<option value="all">All Conferences</option>
-						{#each availableConferences as conference}
-							<option value={conference}>{conference}</option>
-						{/each}
-					</select>
 					<button
 						type="button"
 						onclick={() => showFavoritesOnly = !showFavoritesOnly}
@@ -262,7 +608,7 @@
 						<span>Favorites</span>
 					</button>
 				</div>
-				{#if (searchQuery || selectedConference !== 'all' || showFavoritesOnly) && matchups.length !== allMatchups.length}
+				{#if (searchQuery || showFavoritesOnly) && matchups.length !== allMatchups.length}
 					<span class="search-results">
 						{matchups.length} of {allMatchups.length} games
 						{#if showFavoritesOnly}
@@ -279,14 +625,14 @@
 			</div>
 		{:else if allMatchups.length === 0}
 			<div class="empty-state">
-				<p>No matchups found for current week.</p>
+				<p>No matchups found for this week.</p>
 				<p>Run the sync script to load games:</p>
-				<code>npm run sync:ncaa</code>
+				<code>npm run sync:nba</code>
 			</div>
-		{:else if matchups.length === 0 && (searchQuery || selectedConference !== 'all')}
+		{:else if matchups.length === 0 && (searchQuery || showFavoritesOnly)}
 			<div class="empty-state">
-				<p>No teams found matching "{searchQuery}"</p>
-				<button onclick={() => searchQuery = ''} class="clear-filter-btn">Clear search</button>
+				<p>No games found matching your filters.</p>
+				<button onclick={() => { searchQuery = ''; showFavoritesOnly = false; }} class="clear-filter-btn">Clear filters</button>
 			</div>
 		{:else}
 			<div class="matchups-grid">
@@ -317,7 +663,6 @@
 									<span class="team-name">{game.awayTeam.city} {game.awayTeam.name}</span>
 									<div class="team-meta">
 										<span class="team-abbr">{game.awayTeam.abbreviation}</span>
-										<span class="team-record">({game.awayTeam.wins}-{game.awayTeam.losses})</span>
 									</div>
 								</div>
 								{#if game.status === 'final' || game.status === 'live'}
@@ -332,7 +677,6 @@
 									</div>
 									<div class="team-meta">
 										<span class="team-abbr">{game.homeTeam.abbreviation}</span>
-										<span class="team-record">({game.homeTeam.wins}-{game.homeTeam.losses})</span>
 									</div>
 								</div>
 								{#if game.status === 'final' || game.status === 'live'}
@@ -343,7 +687,12 @@
 						<div class="betting-lines">
 							{#if game.bettingLines.spread.line !== null}
 								<div class="betting-line">
-									<span class="line-label">Spread</span>
+									<div class="line-header">
+										<span class="line-label">Spread</span>
+										{#if game.bettingLines.spread.awayOdds && game.bettingLines.spread.homeOdds}
+											<span class="hold-badge">Hold: {formatHold(game.bettingLines.spread.awayOdds, game.bettingLines.spread.homeOdds)}</span>
+										{/if}
+									</div>
 									<div class="line-values">
 										<span class="line-team">{game.awayTeam.abbreviation} {formatSpreadLine(game.bettingLines.spread.line)}</span>
 										{#if game.bettingLines.spread.awayOdds}
@@ -357,7 +706,12 @@
 							{/if}
 							{#if game.bettingLines.total.line !== null}
 								<div class="betting-line">
-									<span class="line-label">Total</span>
+									<div class="line-header">
+										<span class="line-label">Total</span>
+										{#if game.bettingLines.total.overOdds && game.bettingLines.total.underOdds}
+											<span class="hold-badge">Hold: {formatHold(game.bettingLines.total.overOdds, game.bettingLines.total.underOdds)}</span>
+										{/if}
+									</div>
 									<div class="line-values">
 										<span class="line-team">O/U {game.bettingLines.total.line}</span>
 										{#if game.bettingLines.total.overOdds}
@@ -371,7 +725,12 @@
 							{/if}
 							{#if game.bettingLines.moneyline.away !== null || game.bettingLines.moneyline.home !== null}
 								<div class="betting-line">
-									<span class="line-label">Moneyline</span>
+									<div class="line-header">
+										<span class="line-label">Moneyline</span>
+										{#if game.bettingLines.moneyline.away && game.bettingLines.moneyline.home}
+											<span class="hold-badge">Hold: {formatHold(game.bettingLines.moneyline.away, game.bettingLines.moneyline.home)}</span>
+										{/if}
+									</div>
 									<div class="line-values">
 										<span class="line-team">
 											{#if game.bettingLines.moneyline.away}
@@ -403,7 +762,7 @@
 </div>
 
 <style>
-	.ncaa-page {
+	.nba-page {
 		display: flex;
 		flex-direction: column;
 		gap: var(--spacing-xl);
@@ -445,6 +804,151 @@
 		font-size: 0.875rem;
 	}
 
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+	}
+
+	.export-button {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-xs);
+		padding: var(--spacing-sm) var(--spacing-md);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		font-size: 0.9375rem;
+		background: white;
+		color: var(--color-text-primary);
+		cursor: pointer;
+		transition: border-color 0.2s, box-shadow 0.2s, color 0.2s;
+		font-weight: 500;
+	}
+
+	.export-button:hover:not(:disabled) {
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+	}
+
+	.export-button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.export-button svg {
+		width: 16px;
+		height: 16px;
+		flex-shrink: 0;
+	}
+
+	.sync-button {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-xs);
+		padding: var(--spacing-sm) var(--spacing-md);
+		border: 1px solid var(--color-primary);
+		border-radius: var(--radius-md);
+		font-size: 0.9375rem;
+		background: var(--color-primary);
+		color: white;
+		cursor: pointer;
+		transition: background-color 0.2s, border-color 0.2s, opacity 0.2s;
+		font-weight: 500;
+	}
+
+	.sync-button:hover:not(:disabled) {
+		background: #2563eb;
+		border-color: #2563eb;
+	}
+
+	.sync-button:disabled {
+		opacity: 0.7;
+		cursor: not-allowed;
+	}
+
+	.sync-button.syncing {
+		background: var(--color-text-secondary);
+		border-color: var(--color-text-secondary);
+	}
+
+	.sync-button svg {
+		width: 16px;
+		height: 16px;
+		flex-shrink: 0;
+	}
+
+	.sync-button .spinner {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	.sync-message {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		padding: var(--spacing-md) var(--spacing-lg);
+		border-radius: var(--radius-md);
+		font-size: 0.9375rem;
+		margin-bottom: var(--spacing-lg);
+		animation: slideDown 0.3s ease-out;
+	}
+
+	@keyframes slideDown {
+		from {
+			opacity: 0;
+			transform: translateY(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.sync-message.success {
+		background: #d1fae5;
+		color: #065f46;
+		border: 1px solid #6ee7b7;
+	}
+
+	.sync-message.error {
+		background: #fee2e2;
+		color: #991b1b;
+		border: 1px solid #fca5a5;
+		justify-content: space-between;
+	}
+
+	.sync-message svg {
+		width: 16px;
+		height: 16px;
+		flex-shrink: 0;
+	}
+
+	.dismiss-error {
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: var(--spacing-xs);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #991b1b;
+		border-radius: var(--radius-sm);
+		transition: background-color 0.2s;
+	}
+
+	.dismiss-error:hover {
+		background: rgba(153, 27, 27, 0.1);
+	}
+
 	.matchups-section {
 		background: white;
 		padding: var(--spacing-xl);
@@ -478,23 +982,6 @@
 		align-items: center;
 		gap: var(--spacing-md);
 		flex-wrap: wrap;
-	}
-
-	.conference-filter {
-		padding: var(--spacing-sm) var(--spacing-md);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-md);
-		font-size: 0.9375rem;
-		background: white;
-		cursor: pointer;
-		transition: border-color 0.2s, box-shadow 0.2s;
-		min-width: 180px;
-	}
-
-	.conference-filter:focus {
-		outline: none;
-		border-color: var(--color-primary);
-		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 	}
 
 	.search-input-wrapper {
@@ -550,6 +1037,40 @@
 		font-size: 0.875rem;
 		color: var(--color-text-secondary);
 		white-space: nowrap;
+	}
+
+	.favorites-toggle {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-xs);
+		padding: var(--spacing-sm) var(--spacing-md);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		font-size: 0.9375rem;
+		background: white;
+		cursor: pointer;
+		transition: border-color 0.2s, box-shadow 0.2s, color 0.2s;
+		color: var(--color-text-secondary);
+	}
+
+	.favorites-toggle:hover {
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+	}
+
+	.favorites-toggle.active {
+		border-color: #ef4444;
+		color: #ef4444;
+		background: rgba(239, 68, 68, 0.05);
+	}
+
+	.favorites-toggle svg {
+		flex-shrink: 0;
+	}
+
+	.favorites-count {
+		color: #ef4444;
+		font-weight: 600;
 	}
 
 	.clear-filter-btn {
@@ -621,6 +1142,12 @@
 		box-shadow: var(--shadow-md);
 	}
 
+	.matchup-card.favorited {
+		border-color: #ef4444;
+		border-width: 2px;
+		background: rgba(239, 68, 68, 0.02);
+	}
+
 	.matchup-header {
 		display: flex;
 		justify-content: space-between;
@@ -662,46 +1189,6 @@
 
 	.favorite-btn.active {
 		color: #ef4444;
-	}
-
-	.matchup-card.favorited {
-		border-color: #ef4444;
-		border-width: 2px;
-		background: rgba(239, 68, 68, 0.02);
-	}
-
-	.favorites-toggle {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-xs);
-		padding: var(--spacing-sm) var(--spacing-md);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-md);
-		font-size: 0.9375rem;
-		background: white;
-		cursor: pointer;
-		transition: border-color 0.2s, box-shadow 0.2s, color 0.2s;
-		color: var(--color-text-secondary);
-	}
-
-	.favorites-toggle:hover {
-		border-color: var(--color-primary);
-		color: var(--color-primary);
-	}
-
-	.favorites-toggle.active {
-		border-color: #ef4444;
-		color: #ef4444;
-		background: rgba(239, 68, 68, 0.05);
-	}
-
-	.favorites-toggle svg {
-		flex-shrink: 0;
-	}
-
-	.favorites-count {
-		color: #ef4444;
-		font-weight: 600;
 	}
 
 	.game-time {
@@ -800,12 +1287,6 @@
 		letter-spacing: 0.05em;
 	}
 
-	.team-record {
-		font-size: 0.75rem;
-		color: var(--color-text-secondary);
-		font-weight: 500;
-	}
-
 	.team-score {
 		font-size: 1.25rem;
 		font-weight: 700;
@@ -822,9 +1303,15 @@
 
 	.betting-line {
 		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+		padding: var(--spacing-xs) 0;
+	}
+
+	.line-header {
+		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: var(--spacing-xs) 0;
 	}
 
 	.line-label {
@@ -834,6 +1321,15 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		min-width: 80px;
+	}
+
+	.hold-badge {
+		font-size: 0.7rem;
+		color: #dc2626;
+		font-weight: 600;
+		background: rgba(220, 38, 38, 0.1);
+		padding: 0.125rem 0.375rem;
+		border-radius: var(--radius-sm);
 	}
 
 	.line-values {
@@ -876,7 +1372,7 @@
 	}
 
 	@media (max-width: 768px) {
-		.ncaa-page {
+		.nba-page {
 			padding: var(--spacing-lg);
 		}
 
