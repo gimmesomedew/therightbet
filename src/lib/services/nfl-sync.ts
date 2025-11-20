@@ -308,10 +308,99 @@ export async function syncNFLMatchups() {
 		console.log(`📅 Season: ${season}, Type: ${seasonType}, Week: ${currentWeek}`);
 
 		// Fetch schedule for current week from SportsDataIO
+		// Try multiple endpoint formats since SportsDataIO may use different paths
 		console.log(`\n📊 Fetching Week ${currentWeek} schedule from SportsDataIO...`);
-		const schedule = await makeSportsDataIORequest(`/scores/json/Schedules/${season}/${currentWeek}`);
+		let schedule: any = null;
+		let games: any[] = [];
+		
+		// Try different endpoint formats
+		const scheduleEndpoints = [
+			`/scores/json/Schedules/${season}/${currentWeek}`,
+			`/scores/json/SchedulesByWeek/${season}/${currentWeek}`,
+			`/scores/json/Schedules/${season}/${seasonTypeNum}/${currentWeek}`,
+		];
+		
+		for (const endpoint of scheduleEndpoints) {
+			try {
+				console.log(`   Trying endpoint: ${endpoint}...`);
+				schedule = await makeSportsDataIORequest(endpoint);
+				
+				// Handle different response formats
+				if (Array.isArray(schedule)) {
+					games = schedule;
+				} else if (schedule && typeof schedule === 'object') {
+					if (Array.isArray(schedule.Games)) {
+						games = schedule.Games;
+					} else if (Array.isArray(schedule.games)) {
+						games = schedule.games;
+					} else if (schedule.Week && Array.isArray(schedule.Week.Games)) {
+						games = schedule.Week.Games;
+					} else if (Array.isArray(schedule.Schedules)) {
+						games = schedule.Schedules;
+					}
+				}
+				
+				if (games.length > 0) {
+					console.log(`✅ Found ${games.length} games using endpoint: ${endpoint}`);
+					break;
+				}
+			} catch (error: any) {
+				const errorMsg = error.message || String(error);
+				if (errorMsg.includes('404')) {
+					console.log(`   ⚠️  Endpoint ${endpoint} returned 404`);
+					continue;
+				} else {
+					console.log(`   ⚠️  Endpoint ${endpoint} error: ${errorMsg.substring(0, 80)}`);
+					continue;
+				}
+			}
+		}
 
-		if (!Array.isArray(schedule) || schedule.length === 0) {
+		// If schedule endpoint failed, try getting games from TeamGameStats
+		if (games.length === 0) {
+			console.log(`📊 Schedule endpoint not available, trying TeamGameStats to get games...`);
+			try {
+				const teamStats = await makeSportsDataIORequest(`/stats/json/TeamGameStats/${season}/${currentWeek}`);
+				
+				if (Array.isArray(teamStats) && teamStats.length > 0) {
+					// Extract unique games from team stats
+					const gameMap = new Map<string, any>();
+					
+					for (const stat of teamStats) {
+						// Filter by season type if available
+						if (stat.SeasonType !== undefined && stat.SeasonType !== seasonTypeNum) {
+							continue;
+						}
+						
+						const gameKey = stat.GameKey || `${stat.Date}-${stat.Team}-${stat.Opponent}`;
+						if (!gameMap.has(gameKey)) {
+							gameMap.set(gameKey, {
+								GameKey: stat.GameKey,
+								Date: stat.Date,
+								DateTime: stat.Date,
+								HomeTeam: stat.HomeOrAway === 'HOME' ? stat.Team : stat.Opponent,
+								AwayTeam: stat.HomeOrAway === 'HOME' ? stat.Opponent : stat.Team,
+								HomeTeamID: null, // Will need to look up
+								AwayTeamID: null, // Will need to look up
+								Status: stat.Date ? 'Scheduled' : 'Final',
+								HomeScore: stat.HomeOrAway === 'HOME' ? stat.Score : stat.OpponentScore,
+								AwayScore: stat.HomeOrAway === 'HOME' ? stat.OpponentScore : stat.Score,
+								Season: stat.Season,
+								Week: stat.Week,
+								SeasonType: stat.SeasonType
+							});
+						}
+					}
+					
+					games = Array.from(gameMap.values());
+					console.log(`✅ Found ${games.length} games from TeamGameStats`);
+				}
+			} catch (error: any) {
+				console.log(`   ⚠️  TeamGameStats error: ${error.message?.substring(0, 80)}`);
+			}
+		}
+
+		if (games.length === 0) {
 			console.log(`⚠️  No games found for Week ${currentWeek}`);
 			return {
 				success: true,
@@ -319,11 +408,11 @@ export async function syncNFLMatchups() {
 				updatedCount: 0,
 				errorCount: 0,
 				totalProcessed: 0,
-				message: `No games found for Week ${currentWeek}`
+				message: `No games found for Week ${currentWeek}. The schedule may not be available yet or the endpoint format may have changed.`
 			};
 		}
 
-		console.log(`✅ Found ${schedule.length} games for Week ${currentWeek}\n`);
+		console.log(`✅ Found ${games.length} games for Week ${currentWeek}\n`);
 
 		// Fetch odds from The Odds API if available
 		let oddsEvents: any[] = [];
@@ -359,7 +448,7 @@ export async function syncNFLMatchups() {
 		let errorCount = 0;
 
 		// Process each game
-		for (const game of schedule) {
+		for (const game of games) {
 			try {
 				// Filter by season type if available
 				if (game.SeasonType !== undefined && game.SeasonType !== seasonTypeNum) {
@@ -572,7 +661,7 @@ export async function syncNFLMatchups() {
 		console.log(`   📥 New games: ${syncedCount}`);
 		console.log(`   🔄 Updated games: ${updatedCount}`);
 		console.log(`   ❌ Errors: ${errorCount}`);
-		console.log(`   📊 Total processed: ${schedule.length}`);
+		console.log(`   📊 Total processed: ${games.length}`);
 		console.log('\n🎉 Sync completed successfully!');
 
 		return {
@@ -580,7 +669,7 @@ export async function syncNFLMatchups() {
 			syncedCount,
 			updatedCount,
 			errorCount,
-			totalProcessed: schedule.length,
+			totalProcessed: games.length,
 			week: currentWeek
 		};
 	} catch (error: any) {
