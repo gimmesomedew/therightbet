@@ -287,7 +287,6 @@ export async function syncNFLMatchups() {
 				currentWeek = nearestWeek;
 				console.log(`✅ Using nearest week ${currentWeek} (${nearestDaysDiff.toFixed(1)} days away)`);
 			}
-			}
 		} catch (error: any) {
 			console.error(`❌ Error determining week from schedule: ${error.message}`);
 			console.error(error);
