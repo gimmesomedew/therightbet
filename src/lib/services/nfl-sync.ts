@@ -1,49 +1,53 @@
 import { neon } from '@neondatabase/serverless';
 import { env } from '$env/dynamic/private';
-import { getCurrentWeekFromSchedule } from './nfl-week.js';
 
 const DATABASE_URL = env.DATABASE_URL;
-const SPORTRADAR_API_KEY = env.SPORTRADAR_API_KEY;
+const SPORTSDATAIO_API_KEY = env.SPORTSDATAIO_API_KEY;
 const ODDS_API_KEY = env.ODDS_API_KEY;
 
 if (!DATABASE_URL) {
 	throw new Error('DATABASE_URL environment variable is required');
 }
 
-if (!SPORTRADAR_API_KEY) {
-	throw new Error('SPORTRADAR_API_KEY environment variable is required');
+if (!SPORTSDATAIO_API_KEY) {
+	throw new Error('SPORTSDATAIO_API_KEY environment variable is required');
 }
 
 const db = neon(DATABASE_URL);
-const NFL_BASE_URL = 'https://api.sportradar.com/nfl/official/trial/v7/en';
+const SPORTSDATAIO_BASE_URL = 'https://api.sportsdata.io/v3/nfl';
 const ODDS_API_BASE_URL = 'https://api.the-odds-api.com';
 
-async function makeRequest(endpoint: string, retryCount = 0): Promise<any> {
-	const url = `${NFL_BASE_URL}${endpoint}?api_key=${SPORTRADAR_API_KEY}`;
+async function makeSportsDataIORequest(endpoint: string, retryCount = 0): Promise<any> {
+	const url = `${SPORTSDATAIO_BASE_URL}${endpoint}?key=${SPORTSDATAIO_API_KEY}`;
 	
 	// Add delay to avoid rate limiting
 	if (retryCount > 0) {
-		const delay = Math.min(5000 * Math.pow(2, retryCount - 1), 30000);
+		const delay = Math.min(2000 * Math.pow(2, retryCount - 1), 10000);
 		console.log(`   ⏳ Waiting ${delay / 1000}s before retry ${retryCount}...`);
 		await new Promise(resolve => setTimeout(resolve, delay));
 	} else {
 		// Add initial delay before any request
-		await new Promise(resolve => setTimeout(resolve, 2000));
+		await new Promise(resolve => setTimeout(resolve, 1000));
 	}
 	
 	const response = await fetch(url);
 
 	if (!response.ok) {
-		if (response.status === 429 && retryCount < 4) {
-			return makeRequest(endpoint, retryCount + 1);
+		if (response.status === 429 && retryCount < 3) {
+			return makeSportsDataIORequest(endpoint, retryCount + 1);
 		}
-		throw new Error(`Sportradar API error: ${response.status} ${response.statusText}`);
+		const errorText = await response.text().catch(() => response.statusText);
+		throw new Error(`SportsDataIO API error: ${response.status} ${errorText}`);
 	}
 
 	return await response.json();
 }
 
 async function fetchOddsAPI(endpoint: string, retryCount = 0): Promise<any> {
+	if (!ODDS_API_KEY) {
+		return [];
+	}
+
 	const url = `${ODDS_API_BASE_URL}${endpoint}${endpoint.includes('?') ? '&' : '?'}apiKey=${ODDS_API_KEY}`;
 	
 	if (retryCount > 0) {
@@ -66,8 +70,9 @@ async function fetchOddsAPI(endpoint: string, retryCount = 0): Promise<any> {
 	return await response.json();
 }
 
-function mapSeasonType(seasonType: string): string {
-	return seasonType === 'PRE' ? 'PRE' : seasonType === 'POST' ? 'PST' : 'REG';
+function mapSeasonType(seasonType: string): number {
+	// SportsDataIO uses: 1=REG, 2=PRE, 3=POST
+	return seasonType === 'PRE' ? 2 : seasonType === 'POST' ? 3 : 1;
 }
 
 async function getOrCreateNFLSport() {
@@ -89,43 +94,52 @@ async function getOrCreateNFLSport() {
 }
 
 async function getOrCreateTeam(sportId: number, teamData: any) {
-	const { id: externalId, name, alias, market } = teamData;
-	const teamAbbreviation = alias?.toUpperCase() || '';
-	const teamName = name || '';
-	const teamCity = market || '';
+	// SportsDataIO format: { TeamID, Key, City, Name, Conference, Division }
+	const externalId = teamData.TeamID || teamData.team_id || null;
+	const teamAbbreviation = (teamData.Key || teamData.key || '').toUpperCase();
+	const teamName = teamData.Name || teamData.name || '';
+	const teamCity = teamData.City || teamData.city || '';
+
+	if (!teamName && !teamAbbreviation) {
+		return null;
+	}
 
 	// Try to find existing team by external_id
-	const [existingTeam] = await db`
-		SELECT id FROM teams 
-		WHERE sport_id = ${sportId} AND external_id = ${externalId}
-		LIMIT 1
-	`;
+	if (externalId) {
+		const [existingTeam] = await db`
+			SELECT id FROM teams 
+			WHERE sport_id = ${sportId} AND external_id = ${String(externalId)}
+			LIMIT 1
+		`;
 
-	if (existingTeam) {
-		return existingTeam.id;
+		if (existingTeam) {
+			return existingTeam.id;
+		}
 	}
 
 	// Try to find by abbreviation
-	const [existingByAbbr] = await db`
-		SELECT id FROM teams 
-		WHERE sport_id = ${sportId} AND abbreviation = ${teamAbbreviation}
-		LIMIT 1
-	`;
+	if (teamAbbreviation) {
+		const [existingByAbbr] = await db`
+			SELECT id FROM teams 
+			WHERE sport_id = ${sportId} AND abbreviation = ${teamAbbreviation}
+			LIMIT 1
+		`;
 
-	if (existingByAbbr) {
-		if (!existingByAbbr.external_id) {
-			await db`
-				UPDATE teams SET external_id = ${externalId}
-				WHERE id = ${existingByAbbr.id}
-			`;
+		if (existingByAbbr) {
+			if (externalId && !existingByAbbr.external_id) {
+				await db`
+					UPDATE teams SET external_id = ${String(externalId)}
+					WHERE id = ${existingByAbbr.id}
+				`;
+			}
+			return existingByAbbr.id;
 		}
-		return existingByAbbr.id;
 	}
 
 	// Create new team
 	const [newTeam] = await db`
 		INSERT INTO teams (sport_id, name, city, abbreviation, external_id, created_at, updated_at)
-		VALUES (${sportId}, ${teamName}, ${teamCity}, ${teamAbbreviation}, ${externalId}, NOW(), NOW())
+		VALUES (${sportId}, ${teamName}, ${teamCity}, ${teamAbbreviation}, ${externalId ? String(externalId) : null}, NOW(), NOW())
 		RETURNING id
 	`;
 
@@ -133,7 +147,7 @@ async function getOrCreateTeam(sportId: number, teamData: any) {
 }
 
 export async function syncNFLMatchups() {
-	console.log('🏈 Starting NFL Matchups Sync\n');
+	console.log('🏈 Starting NFL Matchups Sync (SportsDataIO)\n');
 
 	try {
 		const sportId = await getOrCreateNFLSport();
@@ -144,48 +158,28 @@ export async function syncNFLMatchups() {
 		const currentYear = now.getFullYear();
 		const season = currentYear;
 		const seasonType = 'REG'; // Default to regular season
+		const seasonTypeNum = mapSeasonType(seasonType);
 
-		// Try to get current week from schedule function first
+		// Try to determine current week from SportsDataIO schedules
 		let currentWeek: number | null = null;
 		
 		try {
-			currentWeek = await getCurrentWeekFromSchedule(season, seasonType);
-			if (currentWeek) {
-				console.log(`✅ Determined current week ${currentWeek} from schedule function`);
-			}
-		} catch (error: any) {
-			console.log(`⚠️  Error getting week from schedule function: ${error.message}`);
-		}
-
-		// Fallback: Try to determine week from schedule directly
-		if (!currentWeek) {
-			try {
-				console.log('📊 Attempting to determine week from schedule directly...');
-				const schedule = await makeRequest(
-					`/games/${season}/${mapSeasonType(seasonType)}/schedule.json`
-				);
-
-				const weeks = Array.isArray(schedule?.weeks) ? schedule.weeks : [];
-				console.log(`📊 Found ${weeks.length} weeks in schedule`);
-				
-				if (weeks.length === 0) {
-					console.log('⚠️  No weeks found in schedule response');
-				} else {
-					// Find the week that contains games around the current date
-					for (const weekData of weeks) {
-						const games = Array.isArray(weekData?.games) ? weekData.games : [];
-						const weekNumber = weekData.sequence || weekData.week || null;
-
-						if (!weekNumber) continue;
-
-						// Check if any game in this week is within 3 days before or 7 days after
-						for (const game of games) {
-							if (game.scheduled) {
-								const gameDate = new Date(game.scheduled);
+			console.log('📊 Fetching schedule to determine current week...');
+			// Try fetching schedules for multiple weeks to find current week
+			// Start with week 1 and go up to week 18 (regular season max)
+			for (let week = 1; week <= 18; week++) {
+				try {
+					const schedule = await makeSportsDataIORequest(`/scores/json/Schedules/${season}/${week}`);
+					
+					if (Array.isArray(schedule) && schedule.length > 0) {
+						// Check if any game in this week is within 3 days before or 7 days after today
+						for (const game of schedule) {
+							if (game.Date) {
+								const gameDate = new Date(game.Date);
 								const daysDiff = (gameDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-
+								
 								if (daysDiff >= -3 && daysDiff <= 7) {
-									currentWeek = weekNumber;
+									currentWeek = week;
 									console.log(`✅ Found current week ${currentWeek} (game within ${daysDiff.toFixed(1)} days)`);
 									break;
 								}
@@ -193,52 +187,46 @@ export async function syncNFLMatchups() {
 						}
 						if (currentWeek) break;
 					}
+				} catch (error: any) {
+					// Week might not exist yet, continue
+					continue;
+				}
+			}
 
-					// If still no current week, find nearest future week
-					if (!currentWeek) {
-						let nearestWeek: number | null = null;
-						let nearestDaysDiff = Infinity;
+			// If still no current week, find nearest future week
+			if (!currentWeek) {
+				let nearestWeek: number | null = null;
+				let nearestDaysDiff = Infinity;
 
-						for (const weekData of weeks) {
-							const games = Array.isArray(weekData?.games) ? weekData.games : [];
-							const weekNumber = weekData.sequence || weekData.week || null;
-
-							if (!weekNumber) continue;
-
-							for (const game of games) {
-								if (game.scheduled) {
-									const gameDate = new Date(game.scheduled);
+				for (let week = 1; week <= 18; week++) {
+					try {
+						const schedule = await makeSportsDataIORequest(`/scores/json/Schedules/${season}/${week}`);
+						
+						if (Array.isArray(schedule) && schedule.length > 0) {
+							for (const game of schedule) {
+								if (game.Date) {
+									const gameDate = new Date(game.Date);
 									const daysDiff = (gameDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-
+									
 									if (daysDiff >= -7 && daysDiff < nearestDaysDiff) {
 										nearestDaysDiff = daysDiff;
-										nearestWeek = weekNumber;
+										nearestWeek = week;
 									}
 								}
 							}
 						}
-
-						if (nearestWeek !== null) {
-							currentWeek = nearestWeek;
-							console.log(`✅ Using nearest week ${currentWeek} (${nearestDaysDiff.toFixed(1)} days away)`);
-						} else {
-							// Final fallback: return the latest week with games
-							for (let i = weeks.length - 1; i >= 0; i--) {
-								const weekData = weeks[i];
-								const games = Array.isArray(weekData?.games) ? weekData.games : [];
-								if (games.length > 0) {
-									currentWeek = weekData.sequence || weekData.week || null;
-									console.log(`✅ Using latest week ${currentWeek} with games`);
-									break;
-								}
-							}
-						}
+					} catch (error: any) {
+						continue;
 					}
 				}
-			} catch (error: any) {
-				console.error(`❌ Error determining week from schedule: ${error.message}`);
-				console.error(error);
+
+				if (nearestWeek !== null) {
+					currentWeek = nearestWeek;
+					console.log(`✅ Using nearest week ${currentWeek} (${nearestDaysDiff.toFixed(1)} days away)`);
+				}
 			}
+		} catch (error: any) {
+			console.error(`❌ Error determining week from schedule: ${error.message}`);
 		}
 		
 		if (!currentWeek) {
@@ -249,25 +237,17 @@ export async function syncNFLMatchups() {
 				updatedCount: 0,
 				errorCount: 0,
 				totalProcessed: 0,
-				message: 'Could not determine current week. Please ensure SPORTRADAR_API_KEY is set and the API is accessible.'
+				message: 'Could not determine current week. Please ensure SPORTSDATAIO_API_KEY is set and the API is accessible.'
 			};
 		}
 
 		console.log(`📅 Season: ${season}, Type: ${seasonType}, Week: ${currentWeek}`);
 
-		// Fetch schedule for current week
-		console.log(`\n📊 Fetching Week ${currentWeek} schedule from Sportradar...`);
-		const schedule = await makeRequest(
-			`/games/${season}/${mapSeasonType(seasonType)}/${currentWeek}/schedule.json`
-		);
+		// Fetch schedule for current week from SportsDataIO
+		console.log(`\n📊 Fetching Week ${currentWeek} schedule from SportsDataIO...`);
+		const schedule = await makeSportsDataIORequest(`/scores/json/Schedules/${season}/${currentWeek}`);
 
-		const games = Array.isArray(schedule?.week?.games) 
-			? schedule.week.games 
-			: Array.isArray(schedule?.games) 
-				? schedule.games 
-				: [];
-
-		if (games.length === 0) {
+		if (!Array.isArray(schedule) || schedule.length === 0) {
 			console.log(`⚠️  No games found for Week ${currentWeek}`);
 			return {
 				success: true,
@@ -279,7 +259,7 @@ export async function syncNFLMatchups() {
 			};
 		}
 
-		console.log(`✅ Found ${games.length} games for Week ${currentWeek}\n`);
+		console.log(`✅ Found ${schedule.length} games for Week ${currentWeek}\n`);
 
 		// Fetch odds from The Odds API if available
 		let oddsEvents: any[] = [];
@@ -293,22 +273,58 @@ export async function syncNFLMatchups() {
 			}
 		}
 
+		// Fetch teams list to get team details
+		let teamsMap: Record<string, any> = {};
+		try {
+			console.log('📊 Fetching teams list from SportsDataIO...');
+			const teams = await makeSportsDataIORequest('/scores/json/Teams');
+			if (Array.isArray(teams)) {
+				teams.forEach((team: any) => {
+					if (team.TeamID) {
+						teamsMap[team.TeamID] = team;
+					}
+				});
+				console.log(`✅ Loaded ${Object.keys(teamsMap).length} teams`);
+			}
+		} catch (error: any) {
+			console.log(`⚠️  Failed to fetch teams list: ${error.message}`);
+		}
+
 		let syncedCount = 0;
 		let updatedCount = 0;
 		let errorCount = 0;
 
 		// Process each game
-		for (const game of games) {
+		for (const game of schedule) {
 			try {
-				const gameId = game.id;
-				const homeTeam = game.home;
-				const awayTeam = game.away;
-				const scheduled = game.scheduled;
-				const status = game.status || 'scheduled';
-				const homeScore = game.home_points || game.scoring?.home?.points || 0;
-				const awayScore = game.away_points || game.scoring?.away?.points || 0;
+				// Filter by season type if available
+				if (game.SeasonType !== undefined && game.SeasonType !== seasonTypeNum) {
+					continue;
+				}
 
-				if (!homeTeam || !awayTeam) {
+				const gameId = game.GameKey || game.GameID || String(game.Week) + '-' + (game.HomeTeam || '') + '-' + (game.AwayTeam || '');
+				const scheduled = game.Date || game.DateTime || null;
+				const status = game.Status || 'Scheduled';
+				
+				// Get team details from teams map
+				const homeTeamData = teamsMap[game.HomeTeamID] || { TeamID: game.HomeTeamID, Key: game.HomeTeam, Name: game.HomeTeam, City: '' };
+				const awayTeamData = teamsMap[game.AwayTeamID] || { TeamID: game.AwayTeamID, Key: game.AwayTeam, Name: game.AwayTeam, City: '' };
+
+				const homeTeam = {
+					TeamID: game.HomeTeamID || homeTeamData.TeamID,
+					Key: game.HomeTeam || homeTeamData.Key,
+					Name: homeTeamData.Name || game.HomeTeam,
+					City: homeTeamData.City || ''
+				};
+
+				const awayTeam = {
+					TeamID: game.AwayTeamID || awayTeamData.TeamID,
+					Key: game.AwayTeam || awayTeamData.Key,
+					Name: awayTeamData.Name || game.AwayTeam,
+					City: awayTeamData.City || ''
+				};
+
+				if (!homeTeam.Key || !awayTeam.Key) {
 					console.log(`⚠️  Skipping game ${gameId}: Missing team data`);
 					continue;
 				}
@@ -348,13 +364,17 @@ export async function syncNFLMatchups() {
 						away: null
 					},
 					lastUpdated: null,
-					source: 'sportradar'
+					source: 'sportsdataio'
 				};
+
+				// Get scores if available
+				const homeScore = game.HomeScore !== undefined ? game.HomeScore : (game.Score !== undefined ? game.Score : 0);
+				const awayScore = game.AwayScore !== undefined ? game.AwayScore : (game.OpponentScore !== undefined ? game.OpponentScore : 0);
 
 				// Try to match odds from The Odds API
 				if (ODDS_API_KEY && oddsEvents.length > 0) {
-					const homeTeamName = homeTeam.name || homeTeam.market;
-					const awayTeamName = awayTeam.name || awayTeam.market;
+					const homeTeamName = homeTeam.Name || homeTeam.Key;
+					const awayTeamName = awayTeam.Name || awayTeam.Key;
 					
 					const matchingEvent = oddsEvents.find((event) => {
 						const homeMatch = event.home_team.toLowerCase().includes(homeTeamName.toLowerCase()) ||
@@ -438,6 +458,16 @@ export async function syncNFLMatchups() {
 					}
 				}
 
+				// Map status from SportsDataIO format
+				let gameStatus = 'scheduled';
+				if (status === 'Final' || status === 'F') {
+					gameStatus = 'final';
+				} else if (status === 'InProgress' || status === 'Ongoing') {
+					gameStatus = 'in_progress';
+				} else if (status === 'Scheduled' || status === 'S') {
+					gameStatus = 'scheduled';
+				}
+
 				if (existingGame) {
 					// Update existing game
 					await db`
@@ -445,7 +475,7 @@ export async function syncNFLMatchups() {
 							home_team_id = ${homeTeamId},
 							away_team_id = ${awayTeamId},
 							game_date = ${scheduled}::timestamp with time zone,
-							status = ${status.toLowerCase()},
+							status = ${gameStatus},
 							home_score = ${homeScore},
 							away_score = ${awayScore},
 							odds = ${JSON.stringify(oddsData)},
@@ -462,14 +492,14 @@ export async function syncNFLMatchups() {
 							created_at, updated_at
 						) VALUES (
 							${sportId}, ${homeTeamId}, ${awayTeamId}, ${scheduled}::timestamp with time zone,
-							${status.toLowerCase()}, ${homeScore}, ${awayScore}, ${gameId}, ${JSON.stringify(oddsData)},
+							${gameStatus}, ${homeScore}, ${awayScore}, ${gameId}, ${JSON.stringify(oddsData)},
 							NOW(), NOW()
 						)
 					`;
 					syncedCount++;
 				}
 			} catch (gameError: any) {
-				console.error(`   ❌ Error syncing game ${game.id}: ${gameError.message}`);
+				console.error(`   ❌ Error syncing game ${game.GameKey || game.GameID}: ${gameError.message}`);
 				errorCount++;
 			}
 		}
@@ -478,7 +508,7 @@ export async function syncNFLMatchups() {
 		console.log(`   📥 New games: ${syncedCount}`);
 		console.log(`   🔄 Updated games: ${updatedCount}`);
 		console.log(`   ❌ Errors: ${errorCount}`);
-		console.log(`   📊 Total processed: ${games.length}`);
+		console.log(`   📊 Total processed: ${schedule.length}`);
 		console.log('\n🎉 Sync completed successfully!');
 
 		return {
@@ -486,7 +516,7 @@ export async function syncNFLMatchups() {
 			syncedCount,
 			updatedCount,
 			errorCount,
-			totalProcessed: games.length,
+			totalProcessed: schedule.length,
 			week: currentWeek
 		};
 	} catch (error: any) {
@@ -494,4 +524,3 @@ export async function syncNFLMatchups() {
 		throw error;
 	}
 }
-
