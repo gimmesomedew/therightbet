@@ -400,6 +400,63 @@ export async function syncNFLMatchups() {
 			}
 		}
 
+		// If still no games, try using The Odds API as primary source
+		if (games.length === 0 && ODDS_API_KEY) {
+			console.log(`📊 No games from SportsDataIO, trying The Odds API...`);
+			try {
+				const oddsEvents = await fetchOddsAPI('/v4/sports/americanfootball_nfl/odds?regions=us&markets=h2h,spreads,totals&oddsFormat=american');
+				
+				if (Array.isArray(oddsEvents) && oddsEvents.length > 0) {
+					console.log(`✅ Found ${oddsEvents.length} games from The Odds API`);
+					
+					// Convert Odds API events to game format
+					for (const event of oddsEvents) {
+						// Parse team names from event
+						const homeTeamName = event.home_team || '';
+						const awayTeamName = event.away_team || '';
+						
+						// Extract team abbreviations (usually last word or abbreviation)
+						const homeTeamAbbr = homeTeamName.split(' ').pop() || homeTeamName;
+						const awayTeamAbbr = awayTeamName.split(' ').pop() || awayTeamName;
+						
+						// Get game date from commence_time
+						const gameDate = event.commence_time ? new Date(event.commence_time) : null;
+						
+						// Only include games within the current week window
+						if (gameDate) {
+							const daysDiff = (gameDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+							if (daysDiff >= -3 && daysDiff <= 7) {
+								games.push({
+									GameKey: event.id || `${homeTeamAbbr}-${awayTeamAbbr}-${event.commence_time}`,
+									Date: gameDate.toISOString(),
+									DateTime: gameDate.toISOString(),
+									HomeTeam: homeTeamAbbr,
+									AwayTeam: awayTeamAbbr,
+									HomeTeamName: homeTeamName,
+									AwayTeamName: awayTeamName,
+									HomeTeamID: null,
+									AwayTeamID: null,
+									Status: 'Scheduled',
+									HomeScore: 0,
+									AwayScore: 0,
+									Season: season,
+									Week: currentWeek,
+									SeasonType: seasonTypeNum,
+									OddsEvent: event // Store full event for odds processing
+								});
+							}
+						}
+					}
+					
+					if (games.length > 0) {
+						console.log(`✅ Created ${games.length} games from The Odds API`);
+					}
+				}
+			} catch (error: any) {
+				console.log(`   ⚠️  The Odds API error: ${error.message?.substring(0, 80)}`);
+			}
+		}
+
 		if (games.length === 0) {
 			console.log(`⚠️  No games found for Week ${currentWeek}`);
 			return {
@@ -459,22 +516,41 @@ export async function syncNFLMatchups() {
 				const scheduled = game.Date || game.DateTime || null;
 				const status = game.Status || 'Scheduled';
 				
-				// Get team details from teams map
-				const homeTeamData = teamsMap[game.HomeTeamID] || { TeamID: game.HomeTeamID, Key: game.HomeTeam, Name: game.HomeTeam, City: '' };
-				const awayTeamData = teamsMap[game.AwayTeamID] || { TeamID: game.AwayTeamID, Key: game.AwayTeam, Name: game.AwayTeam, City: '' };
+				// Get team details from teams map or use names from game
+				let homeTeamData = game.HomeTeamID ? teamsMap[game.HomeTeamID] : null;
+				let awayTeamData = game.AwayTeamID ? teamsMap[game.AwayTeamID] : null;
+				
+				// If teams not found by ID, try to find by abbreviation or name
+				if (!homeTeamData && game.HomeTeam) {
+					homeTeamData = Object.values(teamsMap).find((t: any) => 
+						t.Key?.toUpperCase() === game.HomeTeam?.toUpperCase() || 
+						t.Name === game.HomeTeamName ||
+						t.Name?.includes(game.HomeTeam) ||
+						game.HomeTeamName?.includes(t.Name)
+					) || null;
+				}
+				
+				if (!awayTeamData && game.AwayTeam) {
+					awayTeamData = Object.values(teamsMap).find((t: any) => 
+						t.Key?.toUpperCase() === game.AwayTeam?.toUpperCase() || 
+						t.Name === game.AwayTeamName ||
+						t.Name?.includes(game.AwayTeam) ||
+						game.AwayTeamName?.includes(t.Name)
+					) || null;
+				}
 
 				const homeTeam = {
-					TeamID: game.HomeTeamID || homeTeamData.TeamID,
-					Key: game.HomeTeam || homeTeamData.Key,
-					Name: homeTeamData.Name || game.HomeTeam,
-					City: homeTeamData.City || ''
+					TeamID: game.HomeTeamID || homeTeamData?.TeamID || null,
+					Key: game.HomeTeam || homeTeamData?.Key || game.HomeTeamName?.split(' ').pop() || '',
+					Name: homeTeamData?.Name || game.HomeTeamName || game.HomeTeam || '',
+					City: homeTeamData?.City || game.HomeTeamName?.split(' ').slice(0, -1).join(' ') || ''
 				};
 
 				const awayTeam = {
-					TeamID: game.AwayTeamID || awayTeamData.TeamID,
-					Key: game.AwayTeam || awayTeamData.Key,
-					Name: awayTeamData.Name || game.AwayTeam,
-					City: awayTeamData.City || ''
+					TeamID: game.AwayTeamID || awayTeamData?.TeamID || null,
+					Key: game.AwayTeam || awayTeamData?.Key || game.AwayTeamName?.split(' ').pop() || '',
+					Name: awayTeamData?.Name || game.AwayTeamName || game.AwayTeam || '',
+					City: awayTeamData?.City || game.AwayTeamName?.split(' ').slice(0, -1).join(' ') || ''
 				};
 
 				if (!homeTeam.Key || !awayTeam.Key) {

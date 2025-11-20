@@ -29,6 +29,7 @@
 		"create:admin": "node scripts/create-admin.js",
 		"test:defensive-stats": "node scripts/test-sportradar-defensive-stats.js",
 		"test:sportsdataio-defensive": "node scripts/test-sportsdataio-nfl-defensive.js",
+		"test:sportsdataio-api": "node scripts/test-sportsdataio-nfl-api.js",
 		"create:nfl-defensive-table": "node scripts/create-nfl-defensive-stats-table.js",
 		"sync:nfl-defensive": "node scripts/sync-nfl-defensive-stats.js",
 		"create:nfl-receiving-yards-table": "node scripts/create-nfl-receiving-yards-table.js",
