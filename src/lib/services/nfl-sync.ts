@@ -164,8 +164,8 @@ export async function syncNFLMatchups() {
 		let currentWeek: number | null = null;
 		
 		try {
-			// First, try to get current week from database
-			console.log('📊 Checking database for current week...');
+			// First, check if we have recent games in database
+			console.log('📊 Checking database for recent games...');
 			const [sport] = await db`
 				SELECT id FROM sports WHERE code = 'NFL' LIMIT 1
 			`;
@@ -175,18 +175,6 @@ export async function syncNFLMatchups() {
 				weekStart.setDate(weekStart.getDate() - 7);
 				const weekEnd = new Date(now);
 				weekEnd.setDate(weekEnd.getDate() + 14);
-				
-				// Try to find week from existing games in database
-				const [weekFromGames] = await db`
-					SELECT DISTINCT 
-						EXTRACT(EPOCH FROM (g.game_date - ${now}::timestamp with time zone)) as time_diff
-					FROM games g
-					WHERE g.sport_id = ${sport.id}
-						AND g.game_date >= ${weekStart}::timestamp with time zone
-						AND g.game_date <= ${weekEnd}::timestamp with time zone
-					ORDER BY ABS(EXTRACT(EPOCH FROM (g.game_date - ${now}::timestamp with time zone)))
-					LIMIT 1
-				`;
 				
 				// Check if we have recent games that might tell us the week
 				const [recentGames] = await db`
@@ -198,7 +186,9 @@ export async function syncNFLMatchups() {
 				`;
 				
 				if (recentGames && recentGames.count > 0) {
-					console.log(`   Found ${recentGames.count} recent games in database`);
+					console.log(`   ✅ Found ${recentGames.count} recent games in database`);
+				} else {
+					console.log(`   ℹ️  No recent games found in database`);
 				}
 			}
 
