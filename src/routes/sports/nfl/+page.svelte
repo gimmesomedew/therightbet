@@ -41,6 +41,9 @@
 	let showFavoritesOnly = $state(false);
 	let favoriteGameIds = $state<Set<string>>(new Set());
 	let togglingFavorite = $state<string | null>(null);
+	let syncing = $state(false);
+	let syncMessage = $state<string | null>(null);
+	let syncError = $state<string | null>(null);
 
 	const touchdownCategories = [
 		{ key: 'rushing', label: 'Rush', className: 'rushing' },
@@ -269,6 +272,39 @@
 		return favoriteGameIds.has(gameId);
 	}
 
+	async function syncNFL() {
+		syncing = true;
+		syncMessage = null;
+		syncError = null;
+
+		try {
+			const response = await fetch('/api/nfl/sync', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				}
+			});
+
+			const result = await response.json();
+
+			if (result.success) {
+				syncMessage = `NFL data synced successfully! Week ${result.week} - Refreshing...`;
+				// Reload matchups after a short delay
+				setTimeout(() => {
+					loadWeekMatchups();
+					syncMessage = null;
+				}, 1500);
+			} else {
+				syncError = result.message || 'Failed to sync NFL data';
+			}
+		} catch (error: any) {
+			syncError = error.message || 'Failed to sync NFL data';
+			console.error('Sync error:', error);
+		} finally {
+			syncing = false;
+		}
+	}
+
 	// Helper function to check if a game date matches the selected day filter
 	function matchesDayFilter(gameDate: string): boolean {
 		if (selectedDay === 'all') return true;
@@ -353,6 +389,29 @@
 					Regular Season {selectedSeason}
 				{/if}
 			</span>
+			<div class="meta-actions">
+				<button
+					type="button"
+					onclick={syncNFL}
+					disabled={syncing}
+					class="sync-button"
+					class:syncing={syncing}
+					aria-label="Sync NFL data"
+					title="Sync NFL games and odds data"
+				>
+					{#if syncing}
+						<svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+						</svg>
+						<span>Syncing...</span>
+					{:else}
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 1 1 6.219-8.56M22 12.5a10 10 0 1 1-6.219 8.56"/>
+						</svg>
+						<span>Sync Data</span>
+					{/if}
+				</button>
+			</div>
 			<span class="updated-at">
 				Last updated: {formatUpdatedAt(touchdownData.updatedAt)}
 				{#if touchdownData.source === 'mock'}
@@ -361,6 +420,38 @@
 			</span>
 		</div>
 	</header>
+
+	{#if syncMessage}
+		<div class="sync-message success" role="alert">
+			<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+				<polyline points="22 4 12 14.01 9 11.01"/>
+			</svg>
+			<span>{syncMessage}</span>
+		</div>
+	{/if}
+
+	{#if syncError}
+		<div class="sync-message error" role="alert">
+			<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<circle cx="12" cy="12" r="10"/>
+				<line x1="12" y1="8" x2="12" y2="12"/>
+				<line x1="12" y1="16" x2="12.01" y2="16"/>
+			</svg>
+			<span>{syncError}</span>
+			<button
+				type="button"
+				onclick={() => syncError = null}
+				class="dismiss-error"
+				aria-label="Dismiss error"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<line x1="18" y1="6" x2="6" y2="18"/>
+					<line x1="6" y1="6" x2="18" y2="18"/>
+				</svg>
+			</button>
+		</div>
+	{/if}
 
 	<section class="filters">
 		<div class="filter">
@@ -749,6 +840,119 @@
 		align-items: center;
 		font-size: 0.875rem;
 		color: var(--color-text-secondary);
+	}
+
+	.meta-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+	}
+
+	.sync-button {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-xs);
+		padding: var(--spacing-sm) var(--spacing-md);
+		border: 1px solid var(--color-primary);
+		border-radius: var(--radius-md);
+		font-size: 0.9375rem;
+		background: var(--color-primary);
+		color: white;
+		cursor: pointer;
+		transition: background-color 0.2s, border-color 0.2s, opacity 0.2s;
+		font-weight: 500;
+	}
+
+	.sync-button:hover:not(:disabled) {
+		background: #2563eb;
+		border-color: #2563eb;
+	}
+
+	.sync-button:disabled {
+		opacity: 0.7;
+		cursor: not-allowed;
+	}
+
+	.sync-button.syncing {
+		background: var(--color-text-secondary);
+		border-color: var(--color-text-secondary);
+	}
+
+	.sync-button svg {
+		width: 16px;
+		height: 16px;
+		flex-shrink: 0;
+	}
+
+	.sync-button .spinner {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	.sync-message {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		padding: var(--spacing-md) var(--spacing-lg);
+		border-radius: var(--radius-md);
+		font-size: 0.9375rem;
+		margin-bottom: var(--spacing-lg);
+		animation: slideDown 0.3s ease-out;
+	}
+
+	@keyframes slideDown {
+		from {
+			opacity: 0;
+			transform: translateY(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.sync-message.success {
+		background: #d1fae5;
+		color: #065f46;
+		border: 1px solid #6ee7b7;
+	}
+
+	.sync-message.error {
+		background: #fee2e2;
+		color: #991b1b;
+		border: 1px solid #fca5a5;
+		justify-content: space-between;
+	}
+
+	.sync-message svg {
+		width: 16px;
+		height: 16px;
+		flex-shrink: 0;
+	}
+
+	.dismiss-error {
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: var(--spacing-xs);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #991b1b;
+		border-radius: var(--radius-sm);
+		transition: background-color 0.2s;
+	}
+
+	.dismiss-error:hover {
+		background: rgba(153, 27, 27, 0.1);
 	}
 
 	.week-label {
