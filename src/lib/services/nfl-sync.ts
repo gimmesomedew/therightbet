@@ -160,49 +160,56 @@ export async function syncNFLMatchups() {
 		const seasonType = 'REG'; // Default to regular season
 		const seasonTypeNum = mapSeasonType(seasonType);
 
-		// Try to determine current week from SportsDataIO schedules
+		// Try to determine current week from SportsDataIO
 		let currentWeek: number | null = null;
 		
 		try {
-			// First, check if we have recent games in database
-			console.log('📊 Checking database for recent games...');
-			const [sport] = await db`
-				SELECT id FROM sports WHERE code = 'NFL' LIMIT 1
-			`;
-			
-			if (sport) {
-				const weekStart = new Date(now);
-				weekStart.setDate(weekStart.getDate() - 7);
-				const weekEnd = new Date(now);
-				weekEnd.setDate(weekEnd.getDate() + 14);
+			// First, try to get current week from SportsDataIO Timeframes endpoint
+			// This is the most reliable way to get the current week
+			console.log('📊 Fetching current week from SportsDataIO Timeframes endpoint...');
+			try {
+				const timeframes = await makeSportsDataIORequest('/scores/json/Timeframes/current');
 				
-				// Check if we have recent games that might tell us the week
-				const [recentGames] = await db`
-					SELECT COUNT(*) as count
-					FROM games g
-					WHERE g.sport_id = ${sport.id}
-						AND g.game_date >= ${weekStart}::timestamp with time zone
-						AND g.game_date <= ${weekEnd}::timestamp with time zone
-				`;
-				
-				if (recentGames && recentGames.count > 0) {
-					console.log(`   ✅ Found ${recentGames.count} recent games in database`);
-				} else {
-					console.log(`   ℹ️  No recent games found in database`);
+				// Handle different response formats
+				if (Array.isArray(timeframes)) {
+					// If it's an array, find the current timeframe
+					const currentTimeframe = timeframes.find((tf: any) => 
+						tf.Name === 'Current' || tf.Season === season || tf.Week !== undefined
+					);
+					if (currentTimeframe && currentTimeframe.Week) {
+						currentWeek = currentTimeframe.Week;
+						console.log(`✅ Found current week ${currentWeek} from Timeframes endpoint`);
+					}
+				} else if (timeframes && typeof timeframes === 'object') {
+					// If it's a single object
+					if (timeframes.Week) {
+						currentWeek = timeframes.Week;
+						console.log(`✅ Found current week ${currentWeek} from Timeframes endpoint`);
+					} else if (timeframes.CurrentWeek) {
+						currentWeek = timeframes.CurrentWeek;
+						console.log(`✅ Found current week ${currentWeek} from Timeframes endpoint`);
+					} else if (timeframes.UpcomingWeek) {
+						currentWeek = timeframes.UpcomingWeek;
+						console.log(`✅ Using upcoming week ${currentWeek} from Timeframes endpoint`);
+					}
 				}
+			} catch (timeframesError: any) {
+				console.log(`   ⚠️  Timeframes endpoint not available: ${timeframesError.message.substring(0, 80)}`);
 			}
 
-			// Estimate week based on date (NFL season typically starts first Thursday of September)
-			// Week 1 is usually first week of September
-			const septemberStart = new Date(season, 8, 1); // September 1
-			const daysSinceSeasonStart = Math.floor((now.getTime() - septemberStart.getTime()) / (1000 * 60 * 60 * 24));
-			const estimatedWeek = Math.max(1, Math.min(18, Math.floor(daysSinceSeasonStart / 7) + 1));
-			
-			console.log(`📊 Estimated week based on date: ${estimatedWeek}`);
-			console.log(`📊 Fetching schedules to determine current week...`);
-			
-			// Fetch schedules for all weeks to find current week
-			console.log('📊 Fetching schedules from SportsDataIO to determine current week...');
+			// Fallback: Try to get current week from schedules
+			if (!currentWeek) {
+				console.log('📊 Fallback: Checking schedules to determine current week...');
+				
+				// Estimate week based on date (NFL season typically starts first Thursday of September)
+				const septemberStart = new Date(season, 8, 1); // September 1
+				const daysSinceSeasonStart = Math.floor((now.getTime() - septemberStart.getTime()) / (1000 * 60 * 60 * 24));
+				const estimatedWeek = Math.max(1, Math.min(18, Math.floor(daysSinceSeasonStart / 7) + 1));
+				
+				console.log(`📊 Estimated week based on date: ${estimatedWeek}`);
+				
+				// Fetch schedules for all weeks to find current week
+				console.log('📊 Fetching schedules from SportsDataIO to determine current week...');
 			let nearestWeek: number | null = null;
 			let nearestDaysDiff = Infinity;
 			let foundCurrentWeek = false;
@@ -279,6 +286,7 @@ export async function syncNFLMatchups() {
 			if (!currentWeek && nearestWeek !== null) {
 				currentWeek = nearestWeek;
 				console.log(`✅ Using nearest week ${currentWeek} (${nearestDaysDiff.toFixed(1)} days away)`);
+			}
 			}
 		} catch (error: any) {
 			console.error(`❌ Error determining week from schedule: ${error.message}`);
