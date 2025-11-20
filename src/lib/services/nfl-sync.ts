@@ -145,8 +145,101 @@ export async function syncNFLMatchups() {
 		const season = currentYear;
 		const seasonType = 'REG'; // Default to regular season
 
-		// Get current week from schedule
-		const currentWeek = await getCurrentWeekFromSchedule(season, seasonType);
+		// Try to get current week from schedule function first
+		let currentWeek: number | null = null;
+		
+		try {
+			currentWeek = await getCurrentWeekFromSchedule(season, seasonType);
+			if (currentWeek) {
+				console.log(`✅ Determined current week ${currentWeek} from schedule function`);
+			}
+		} catch (error: any) {
+			console.log(`⚠️  Error getting week from schedule function: ${error.message}`);
+		}
+
+		// Fallback: Try to determine week from schedule directly
+		if (!currentWeek) {
+			try {
+				console.log('📊 Attempting to determine week from schedule directly...');
+				const schedule = await makeRequest(
+					`/games/${season}/${mapSeasonType(seasonType)}/schedule.json`
+				);
+
+				const weeks = Array.isArray(schedule?.weeks) ? schedule.weeks : [];
+				console.log(`📊 Found ${weeks.length} weeks in schedule`);
+				
+				if (weeks.length === 0) {
+					console.log('⚠️  No weeks found in schedule response');
+				} else {
+					// Find the week that contains games around the current date
+					for (const weekData of weeks) {
+						const games = Array.isArray(weekData?.games) ? weekData.games : [];
+						const weekNumber = weekData.sequence || weekData.week || null;
+
+						if (!weekNumber) continue;
+
+						// Check if any game in this week is within 3 days before or 7 days after
+						for (const game of games) {
+							if (game.scheduled) {
+								const gameDate = new Date(game.scheduled);
+								const daysDiff = (gameDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+
+								if (daysDiff >= -3 && daysDiff <= 7) {
+									currentWeek = weekNumber;
+									console.log(`✅ Found current week ${currentWeek} (game within ${daysDiff.toFixed(1)} days)`);
+									break;
+								}
+							}
+						}
+						if (currentWeek) break;
+					}
+
+					// If still no current week, find nearest future week
+					if (!currentWeek) {
+						let nearestWeek: number | null = null;
+						let nearestDaysDiff = Infinity;
+
+						for (const weekData of weeks) {
+							const games = Array.isArray(weekData?.games) ? weekData.games : [];
+							const weekNumber = weekData.sequence || weekData.week || null;
+
+							if (!weekNumber) continue;
+
+							for (const game of games) {
+								if (game.scheduled) {
+									const gameDate = new Date(game.scheduled);
+									const daysDiff = (gameDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+
+									if (daysDiff >= -7 && daysDiff < nearestDaysDiff) {
+										nearestDaysDiff = daysDiff;
+										nearestWeek = weekNumber;
+									}
+								}
+							}
+						}
+
+						if (nearestWeek !== null) {
+							currentWeek = nearestWeek;
+							console.log(`✅ Using nearest week ${currentWeek} (${nearestDaysDiff.toFixed(1)} days away)`);
+						} else {
+							// Final fallback: return the latest week with games
+							for (let i = weeks.length - 1; i >= 0; i--) {
+								const weekData = weeks[i];
+								const games = Array.isArray(weekData?.games) ? weekData.games : [];
+								if (games.length > 0) {
+									currentWeek = weekData.sequence || weekData.week || null;
+									console.log(`✅ Using latest week ${currentWeek} with games`);
+									break;
+								}
+							}
+						}
+					}
+				}
+			} catch (error: any) {
+				console.error(`❌ Error determining week from schedule: ${error.message}`);
+				console.error(error);
+			}
+		}
 		
 		if (!currentWeek) {
 			console.log('⚠️  Could not determine current week');
@@ -156,7 +249,7 @@ export async function syncNFLMatchups() {
 				updatedCount: 0,
 				errorCount: 0,
 				totalProcessed: 0,
-				message: 'Could not determine current week'
+				message: 'Could not determine current week. Please ensure SPORTRADAR_API_KEY is set and the API is accessible.'
 			};
 		}
 
