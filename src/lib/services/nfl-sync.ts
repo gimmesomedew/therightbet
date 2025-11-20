@@ -201,106 +201,84 @@ export async function syncNFLMatchups() {
 			console.log(`📊 Estimated week based on date: ${estimatedWeek}`);
 			console.log(`📊 Fetching schedules to determine current week...`);
 			
-			// Try a smart search: check estimated week ± 3 weeks
-			const searchRange = [estimatedWeek - 2, estimatedWeek - 1, estimatedWeek, estimatedWeek + 1, estimatedWeek + 2, estimatedWeek + 3]
-				.filter(w => w >= 1 && w <= 18)
-				.sort((a, b) => Math.abs(a - estimatedWeek) - Math.abs(b - estimatedWeek));
-			
-			// If estimated week fails, try all weeks
-			if (!currentWeek) {
-				for (const week of searchRange) {
-					try {
-						console.log(`   Checking week ${week}...`);
-						const schedule = await makeSportsDataIORequest(`/scores/json/Schedules/${season}/${week}`);
-						
-						if (Array.isArray(schedule) && schedule.length > 0) {
-							// Check if any game in this week is within 3 days before or 7 days after today
-							for (const game of schedule) {
-								if (game.Date || game.DateTime) {
-									const gameDate = new Date(game.Date || game.DateTime);
-									if (isNaN(gameDate.getTime())) continue;
-									
-									const daysDiff = (gameDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-									
-									if (daysDiff >= -3 && daysDiff <= 7) {
-										currentWeek = week;
-										console.log(`✅ Found current week ${currentWeek} (game within ${daysDiff.toFixed(1)} days)`);
-										break;
-									}
-								}
-							}
-							if (currentWeek) break;
-						}
-					} catch (error: any) {
-						// Log but continue
-						if (!error.message.includes('404')) {
-							console.log(`   ⚠️  Week ${week} error: ${error.message.substring(0, 50)}`);
-						}
-						continue;
-					}
-				}
-			}
+			// Fetch schedules for all weeks to find current week
+			console.log('📊 Fetching schedules from SportsDataIO to determine current week...');
+			let nearestWeek: number | null = null;
+			let nearestDaysDiff = Infinity;
+			let foundCurrentWeek = false;
 
-			// If still no current week, find nearest future week (try all weeks)
-			if (!currentWeek) {
-				console.log('📊 Searching all weeks for nearest future week...');
-				let nearestWeek: number | null = null;
-				let nearestDaysDiff = Infinity;
-
-				// Try weeks in order, starting from estimated week
-				const allWeeks = [...searchRange];
-				for (let w = 1; w <= 18; w++) {
-					if (!allWeeks.includes(w)) allWeeks.push(w);
-				}
-
-				for (const week of allWeeks.slice(0, 10)) { // Limit to first 10 to avoid too many API calls
-					try {
-						const schedule = await makeSportsDataIORequest(`/scores/json/Schedules/${season}/${week}`);
-						
-						if (Array.isArray(schedule) && schedule.length > 0) {
-							for (const game of schedule) {
-								if (game.Date || game.DateTime) {
-									const gameDate = new Date(game.Date || game.DateTime);
-									if (isNaN(gameDate.getTime())) continue;
-									
-									const daysDiff = (gameDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-									
-									// Prefer future games, but accept past games within 7 days
-									if (daysDiff >= -7 && daysDiff < nearestDaysDiff) {
-										nearestDaysDiff = daysDiff;
-										nearestWeek = week;
-									}
-								}
-							}
-						}
-					} catch (error: any) {
-						continue;
-					}
-					
-					// If we found a future week, we can stop
-					if (nearestWeek !== null && nearestDaysDiff >= 0) {
-						break;
-					}
-				}
-
-				if (nearestWeek !== null) {
-					currentWeek = nearestWeek;
-					console.log(`✅ Using nearest week ${currentWeek} (${nearestDaysDiff.toFixed(1)} days away)`);
-				}
-			}
-
-			// Final fallback: use estimated week if we're in season
-			if (!currentWeek && estimatedWeek >= 1 && estimatedWeek <= 18) {
-				console.log(`⚠️  Could not find exact week, trying estimated week ${estimatedWeek}...`);
+			// Try all weeks from 1 to 18
+			for (let week = 1; week <= 18; week++) {
 				try {
-					const schedule = await makeSportsDataIORequest(`/scores/json/Schedules/${season}/${estimatedWeek}`);
-					if (Array.isArray(schedule) && schedule.length > 0) {
-						currentWeek = estimatedWeek;
-						console.log(`✅ Using estimated week ${currentWeek}`);
+					console.log(`   Checking week ${week}...`);
+					const schedule = await makeSportsDataIORequest(`/scores/json/Schedules/${season}/${week}`);
+					
+					// Handle different response formats
+					let games: any[] = [];
+					if (Array.isArray(schedule)) {
+						games = schedule;
+					} else if (schedule && typeof schedule === 'object') {
+						// Might be wrapped in an object
+						if (Array.isArray(schedule.Games)) {
+							games = schedule.Games;
+						} else if (Array.isArray(schedule.games)) {
+							games = schedule.games;
+						} else if (schedule.Week && Array.isArray(schedule.Week.Games)) {
+							games = schedule.Week.Games;
+						}
+					}
+
+					if (games.length > 0) {
+						console.log(`   ✅ Week ${week}: Found ${games.length} games`);
+						
+						// Check each game's date
+						for (const game of games) {
+							const gameDateStr = game.Date || game.DateTime || game.GameDate || game.Scheduled;
+							if (!gameDateStr) continue;
+							
+							const gameDate = new Date(gameDateStr);
+							if (isNaN(gameDate.getTime())) {
+								console.log(`   ⚠️  Invalid date format: ${gameDateStr}`);
+								continue;
+							}
+							
+							const daysDiff = (gameDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+							
+							// If game is within 3 days before or 7 days after today, it's the current week
+							if (daysDiff >= -3 && daysDiff <= 7) {
+								currentWeek = week;
+								foundCurrentWeek = true;
+								console.log(`✅ Found current week ${currentWeek} (game on ${gameDate.toISOString().split('T')[0]}, ${daysDiff.toFixed(1)} days away)`);
+								break;
+							}
+							
+							// Track nearest future week as fallback
+							if (daysDiff >= -7 && daysDiff < nearestDaysDiff) {
+								nearestDaysDiff = daysDiff;
+								nearestWeek = week;
+							}
+						}
+						
+						if (foundCurrentWeek) break;
+					} else {
+						console.log(`   ℹ️  Week ${week}: No games found`);
 					}
 				} catch (error: any) {
-					// Ignore error
+					// Log error but continue
+					const errorMsg = error.message || String(error);
+					if (errorMsg.includes('404') || errorMsg.includes('not found')) {
+						console.log(`   ℹ️  Week ${week}: Not available (404)`);
+					} else {
+						console.log(`   ⚠️  Week ${week} error: ${errorMsg.substring(0, 80)}`);
+					}
+					continue;
 				}
+			}
+
+			// If we didn't find a current week, use the nearest week
+			if (!currentWeek && nearestWeek !== null) {
+				currentWeek = nearestWeek;
+				console.log(`✅ Using nearest week ${currentWeek} (${nearestDaysDiff.toFixed(1)} days away)`);
 			}
 		} catch (error: any) {
 			console.error(`❌ Error determining week from schedule: ${error.message}`);
