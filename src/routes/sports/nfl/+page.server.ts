@@ -118,6 +118,7 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	let availableWeeks: AvailableWeek[] = [];
 	let selectedWeek: number;
+	let currentWeek: number | null = null;
 
 	try {
 		// Fetch available weeks with data
@@ -133,8 +134,7 @@ export const load: PageServerLoad = async ({ url }) => {
 			// Use requested week if it has data
 			selectedWeek = requestedWeek;
 		} else {
-		// Determine current week
-		let currentWeek: number | null = null;
+			// Determine current week
 
 		// First, try to get current week from SportsDataIO Timeframes (most reliable)
 		try {
