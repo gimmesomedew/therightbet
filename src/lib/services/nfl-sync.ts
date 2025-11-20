@@ -601,17 +601,23 @@ export async function syncNFLMatchups() {
 				const awayScore = game.AwayScore !== undefined ? game.AwayScore : (game.OpponentScore !== undefined ? game.OpponentScore : 0);
 
 				// Try to match odds from The Odds API
-				if (ODDS_API_KEY && oddsEvents.length > 0) {
-					const homeTeamName = homeTeam.Name || homeTeam.Key;
-					const awayTeamName = awayTeam.Name || awayTeam.Key;
+				// If game came from Odds API, use the stored event, otherwise try to match
+				let matchingEvent = game.OddsEvent || null;
+				
+				if (!matchingEvent && ODDS_API_KEY && oddsEvents.length > 0) {
+					const homeTeamName = homeTeam.Name || homeTeam.Key || game.HomeTeamName;
+					const awayTeamName = awayTeam.Name || awayTeam.Key || game.AwayTeamName;
 					
-					const matchingEvent = oddsEvents.find((event) => {
+					matchingEvent = oddsEvents.find((event) => {
 						const homeMatch = event.home_team.toLowerCase().includes(homeTeamName.toLowerCase()) ||
-							homeTeamName.toLowerCase().includes(event.home_team.toLowerCase());
+							homeTeamName.toLowerCase().includes(event.home_team.toLowerCase()) ||
+							event.home_team.toLowerCase().includes(game.HomeTeam?.toLowerCase() || '');
 						const awayMatch = event.away_team.toLowerCase().includes(awayTeamName.toLowerCase()) ||
-							awayTeamName.toLowerCase().includes(event.away_team.toLowerCase());
+							awayTeamName.toLowerCase().includes(event.away_team.toLowerCase()) ||
+							event.away_team.toLowerCase().includes(game.AwayTeam?.toLowerCase() || '');
 						return homeMatch && awayMatch;
-					});
+					}) || null;
+				}
 
 					if (matchingEvent && matchingEvent.bookmakers && matchingEvent.bookmakers.length > 0) {
 						let bestSpread: any = null;
