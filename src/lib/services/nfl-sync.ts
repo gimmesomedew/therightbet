@@ -210,82 +210,83 @@ export async function syncNFLMatchups() {
 				
 				// Fetch schedules for all weeks to find current week
 				console.log('📊 Fetching schedules from SportsDataIO to determine current week...');
-			let nearestWeek: number | null = null;
-			let nearestDaysDiff = Infinity;
-			let foundCurrentWeek = false;
+				let nearestWeek: number | null = null;
+				let nearestDaysDiff = Infinity;
+				let foundCurrentWeek = false;
 
-			// Try all weeks from 1 to 18
-			for (let week = 1; week <= 18; week++) {
-				try {
-					console.log(`   Checking week ${week}...`);
-					const schedule = await makeSportsDataIORequest(`/scores/json/Schedules/${season}/${week}`);
-					
-					// Handle different response formats
-					let games: any[] = [];
-					if (Array.isArray(schedule)) {
-						games = schedule;
-					} else if (schedule && typeof schedule === 'object') {
-						// Might be wrapped in an object
-						if (Array.isArray(schedule.Games)) {
-							games = schedule.Games;
-						} else if (Array.isArray(schedule.games)) {
-							games = schedule.games;
-						} else if (schedule.Week && Array.isArray(schedule.Week.Games)) {
-							games = schedule.Week.Games;
-						}
-					}
-
-					if (games.length > 0) {
-						console.log(`   ✅ Week ${week}: Found ${games.length} games`);
+				// Try all weeks from 1 to 18
+				for (let week = 1; week <= 18; week++) {
+					try {
+						console.log(`   Checking week ${week}...`);
+						const schedule = await makeSportsDataIORequest(`/scores/json/Schedules/${season}/${week}`);
 						
-						// Check each game's date
-						for (const game of games) {
-							const gameDateStr = game.Date || game.DateTime || game.GameDate || game.Scheduled;
-							if (!gameDateStr) continue;
-							
-							const gameDate = new Date(gameDateStr);
-							if (isNaN(gameDate.getTime())) {
-								console.log(`   ⚠️  Invalid date format: ${gameDateStr}`);
-								continue;
-							}
-							
-							const daysDiff = (gameDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-							
-							// If game is within 3 days before or 7 days after today, it's the current week
-							if (daysDiff >= -3 && daysDiff <= 7) {
-								currentWeek = week;
-								foundCurrentWeek = true;
-								console.log(`✅ Found current week ${currentWeek} (game on ${gameDate.toISOString().split('T')[0]}, ${daysDiff.toFixed(1)} days away)`);
-								break;
-							}
-							
-							// Track nearest future week as fallback
-							if (daysDiff >= -7 && daysDiff < nearestDaysDiff) {
-								nearestDaysDiff = daysDiff;
-								nearestWeek = week;
+						// Handle different response formats
+						let games: any[] = [];
+						if (Array.isArray(schedule)) {
+							games = schedule;
+						} else if (schedule && typeof schedule === 'object') {
+							// Might be wrapped in an object
+							if (Array.isArray(schedule.Games)) {
+								games = schedule.Games;
+							} else if (Array.isArray(schedule.games)) {
+								games = schedule.games;
+							} else if (schedule.Week && Array.isArray(schedule.Week.Games)) {
+								games = schedule.Week.Games;
 							}
 						}
-						
-						if (foundCurrentWeek) break;
-					} else {
-						console.log(`   ℹ️  Week ${week}: No games found`);
+
+						if (games.length > 0) {
+							console.log(`   ✅ Week ${week}: Found ${games.length} games`);
+							
+							// Check each game's date
+							for (const game of games) {
+								const gameDateStr = game.Date || game.DateTime || game.GameDate || game.Scheduled;
+								if (!gameDateStr) continue;
+								
+								const gameDate = new Date(gameDateStr);
+								if (isNaN(gameDate.getTime())) {
+									console.log(`   ⚠️  Invalid date format: ${gameDateStr}`);
+									continue;
+								}
+								
+								const daysDiff = (gameDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+								
+								// If game is within 3 days before or 7 days after today, it's the current week
+								if (daysDiff >= -3 && daysDiff <= 7) {
+									currentWeek = week;
+									foundCurrentWeek = true;
+									console.log(`✅ Found current week ${currentWeek} (game on ${gameDate.toISOString().split('T')[0]}, ${daysDiff.toFixed(1)} days away)`);
+									break;
+								}
+								
+								// Track nearest future week as fallback
+								if (daysDiff >= -7 && daysDiff < nearestDaysDiff) {
+									nearestDaysDiff = daysDiff;
+									nearestWeek = week;
+								}
+							}
+							
+							if (foundCurrentWeek) break;
+						} else {
+							console.log(`   ℹ️  Week ${week}: No games found`);
+						}
+					} catch (error: any) {
+						// Log error but continue
+						const errorMsg = error.message || String(error);
+						if (errorMsg.includes('404') || errorMsg.includes('not found')) {
+							console.log(`   ℹ️  Week ${week}: Not available (404)`);
+						} else {
+							console.log(`   ⚠️  Week ${week} error: ${errorMsg.substring(0, 80)}`);
+						}
+						continue;
 					}
-				} catch (error: any) {
-					// Log error but continue
-					const errorMsg = error.message || String(error);
-					if (errorMsg.includes('404') || errorMsg.includes('not found')) {
-						console.log(`   ℹ️  Week ${week}: Not available (404)`);
-					} else {
-						console.log(`   ⚠️  Week ${week} error: ${errorMsg.substring(0, 80)}`);
-					}
-					continue;
 				}
-			}
 
-			// If we didn't find a current week, use the nearest week
-			if (!currentWeek && nearestWeek !== null) {
-				currentWeek = nearestWeek;
-				console.log(`✅ Using nearest week ${currentWeek} (${nearestDaysDiff.toFixed(1)} days away)`);
+				// If we didn't find a current week, use the nearest week
+				if (!currentWeek && nearestWeek !== null) {
+					currentWeek = nearestWeek;
+					console.log(`✅ Using nearest week ${currentWeek} (${nearestDaysDiff.toFixed(1)} days away)`);
+				}
 			}
 		} catch (error: any) {
 			console.error(`❌ Error determining week from schedule: ${error.message}`);
@@ -619,77 +620,76 @@ export async function syncNFLMatchups() {
 				}
 
 				if (matchingEvent && matchingEvent.bookmakers && matchingEvent.bookmakers.length > 0) {
-						let bestSpread: any = null;
-						let bestTotal: any = null;
-						let bestMoneyline: any = { home: null, away: null };
+					let bestSpread: any = null;
+					let bestTotal: any = null;
+					let bestMoneyline: any = { home: null, away: null };
 
-						for (const bookmaker of matchingEvent.bookmakers) {
-							for (const market of bookmaker.markets) {
-								if (market.key === 'spreads') {
-									for (const outcome of market.outcomes) {
-										if (outcome.point !== undefined) {
-											if (!bestSpread || Math.abs(outcome.point) < Math.abs(bestSpread.line)) {
-												bestSpread = {
-													line: outcome.point,
-													homeOdds: outcome.name === matchingEvent.home_team ? outcome.price : null,
-													awayOdds: outcome.name === matchingEvent.away_team ? outcome.price : null
-												};
-											}
-										}
-									}
-								} else if (market.key === 'totals') {
-									for (const outcome of market.outcomes) {
-										if (outcome.point !== undefined && !bestTotal) {
-											bestTotal = {
+					for (const bookmaker of matchingEvent.bookmakers) {
+						for (const market of bookmaker.markets) {
+							if (market.key === 'spreads') {
+								for (const outcome of market.outcomes) {
+									if (outcome.point !== undefined) {
+										if (!bestSpread || Math.abs(outcome.point) < Math.abs(bestSpread.line)) {
+											bestSpread = {
 												line: outcome.point,
-												overOdds: outcome.name === 'Over' ? outcome.price : null,
-												underOdds: outcome.name === 'Under' ? outcome.price : null
+												homeOdds: outcome.name === matchingEvent.home_team ? outcome.price : null,
+												awayOdds: outcome.name === matchingEvent.away_team ? outcome.price : null
 											};
 										}
 									}
-								} else if (market.key === 'h2h') {
-									for (const outcome of market.outcomes) {
-										if (outcome.name === matchingEvent.home_team) {
-											if (!bestMoneyline.home || outcome.price > bestMoneyline.home) {
-												bestMoneyline.home = outcome.price;
-											}
-										} else if (outcome.name === matchingEvent.away_team) {
-											if (!bestMoneyline.away || outcome.price > bestMoneyline.away) {
-												bestMoneyline.away = outcome.price;
-											}
+								}
+							} else if (market.key === 'totals') {
+								for (const outcome of market.outcomes) {
+									if (outcome.point !== undefined && !bestTotal) {
+										bestTotal = {
+											line: outcome.point,
+											overOdds: outcome.name === 'Over' ? outcome.price : null,
+											underOdds: outcome.name === 'Under' ? outcome.price : null
+										};
+									}
+								}
+							} else if (market.key === 'h2h') {
+								for (const outcome of market.outcomes) {
+									if (outcome.name === matchingEvent.home_team) {
+										if (!bestMoneyline.home || outcome.price > bestMoneyline.home) {
+											bestMoneyline.home = outcome.price;
+										}
+									} else if (outcome.name === matchingEvent.away_team) {
+										if (!bestMoneyline.away || outcome.price > bestMoneyline.away) {
+											bestMoneyline.away = outcome.price;
 										}
 									}
 								}
 							}
 						}
-
-						if (bestSpread) {
-							oddsData.spread = {
-								line: bestSpread.line,
-								homeOdds: bestSpread.homeOdds?.toString() || null,
-								awayOdds: bestSpread.awayOdds?.toString() || null,
-								home: null,
-								away: null
-							};
-						}
-						if (bestTotal) {
-							oddsData.total = {
-								line: bestTotal.line,
-								overOdds: bestTotal.overOdds?.toString() || null,
-								underOdds: bestTotal.underOdds?.toString() || null,
-								over: null,
-								under: null
-							};
-						}
-						if (bestMoneyline.home || bestMoneyline.away) {
-							oddsData.moneyline = {
-								home: bestMoneyline.home?.toString() || null,
-								away: bestMoneyline.away?.toString() || null
-							};
-						}
-						oddsData.lastUpdated = new Date().toISOString();
-						oddsData.source = 'the-odds-api';
 					}
+
+					if (bestSpread) {
+						oddsData.spread = {
+							line: bestSpread.line,
+							homeOdds: bestSpread.homeOdds?.toString() || null,
+							awayOdds: bestSpread.awayOdds?.toString() || null,
+							home: null,
+							away: null
+						};
+					}
+					if (bestTotal) {
+						oddsData.total = {
+							line: bestTotal.line,
+							overOdds: bestTotal.overOdds?.toString() || null,
+							underOdds: bestTotal.underOdds?.toString() || null,
+							over: null,
+							under: null
+						};
+					}
+					if (bestMoneyline.home || bestMoneyline.away) {
+						oddsData.moneyline = {
+							home: bestMoneyline.home?.toString() || null,
+							away: bestMoneyline.away?.toString() || null
+						};
+					}
+					oddsData.lastUpdated = new Date().toISOString();
+					oddsData.source = 'the-odds-api';
 				}
 
 				// Map status from SportsDataIO format
