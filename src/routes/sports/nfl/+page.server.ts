@@ -2,6 +2,7 @@ import type { PageServerLoad } from './$types';
 import { fetchNflTouchdownsFromDb } from '$lib/services/nfl-touchdowns-db';
 import { getAvailableWeeks, type TouchdownResponse, type AvailableWeek } from '$lib/services/nfl-touchdowns';
 import { getCurrentNflWeek, getCurrentWeekFromSchedule, type SeasonType } from '$lib/services/nfl-week';
+import { env } from '$env/dynamic/private';
 
 interface SelectionOption {
 	value: string | number;
@@ -62,17 +63,33 @@ function getSeasonTypeOptions(): SelectionOption[] {
 	];
 }
 
-function getWeekOptions(seasonType: SeasonType, availableWeeks?: AvailableWeek[]): SelectionOption[] {
+function getWeekOptions(seasonType: SeasonType, availableWeeks?: AvailableWeek[], currentWeek?: number | null): SelectionOption[] {
 	const maxWeek = seasonType === 'PRE' ? 3 : seasonType === 'POST' ? 5 : 18;
 
-	// If we have availability data, only show weeks that have real data
+	// If we have availability data, show weeks that have data, plus current week if different
 	if (availableWeeks && availableWeeks.length > 0) {
-		return availableWeeks
+		const weeksWithData = availableWeeks
 			.filter((w) => w.hasData)
 			.map((w) => ({
 				value: w.week,
-				label: seasonType === 'POST' ? `Week ${w.week} (Postseason)` : `Week ${w.week}`
+				label: seasonType === 'POST' ? `Week ${w.week} (Postseason)` : `Week ${w.week}`,
+				hasData: true
 			}));
+		
+		// Add current week if it's not already in the list and it's a valid week
+		if (currentWeek && currentWeek >= 1 && currentWeek <= maxWeek) {
+			const hasCurrentWeek = weeksWithData.some(w => w.value === currentWeek);
+			if (!hasCurrentWeek) {
+				weeksWithData.push({
+					value: currentWeek,
+					label: seasonType === 'POST' ? `Week ${currentWeek} (Postseason)` : `Week ${currentWeek}`,
+					hasData: false
+				});
+			}
+		}
+		
+		// Sort by week number
+		return weeksWithData.sort((a, b) => Number(a.value) - Number(b.value));
 	}
 
 	// Fallback to all possible weeks if we couldn't determine availability
@@ -116,16 +133,36 @@ export const load: PageServerLoad = async ({ url }) => {
 			// Use requested week if it has data
 			selectedWeek = requestedWeek;
 		} else {
-			// Determine current week
-			let currentWeek: number | null = null;
+		// Determine current week
+		let currentWeek: number | null = null;
 
-			// Try to get current week from database first
-			currentWeek = await getCurrentNflWeek(selectedSeason, selectedSeasonType);
-
-			// If not found in database, try Sportradar schedule
-			if (!currentWeek) {
-				currentWeek = await getCurrentWeekFromSchedule(selectedSeason, selectedSeasonType);
+		// First, try to get current week from SportsDataIO Timeframes (most reliable)
+		try {
+			const SPORTSDATAIO_API_KEY = env.SPORTSDATAIO_API_KEY;
+			if (SPORTSDATAIO_API_KEY) {
+				const timeframesResponse = await fetch(`https://api.sportsdata.io/v3/nfl/scores/json/Timeframes/current?key=${SPORTSDATAIO_API_KEY}`);
+				if (timeframesResponse.ok) {
+					const timeframes = await timeframesResponse.json();
+					if (Array.isArray(timeframes) && timeframes.length > 0 && timeframes[0].Week) {
+						currentWeek = timeframes[0].Week;
+					} else if (timeframes && typeof timeframes === 'object' && timeframes.Week) {
+						currentWeek = timeframes.Week;
+					}
+				}
 			}
+		} catch (error) {
+			// Continue to fallback methods
+		}
+
+		// Try to get current week from database
+		if (!currentWeek) {
+			currentWeek = await getCurrentNflWeek(selectedSeason, selectedSeasonType);
+		}
+
+		// If not found in database, try Sportradar schedule
+		if (!currentWeek) {
+			currentWeek = await getCurrentWeekFromSchedule(selectedSeason, selectedSeasonType);
+		}
 
 			// If we found a current week and it has data, use it
 			if (currentWeek && availableWeeks.some((w) => w.week === currentWeek && w.hasData)) {
@@ -180,7 +217,7 @@ export const load: PageServerLoad = async ({ url }) => {
 		selectedWeek,
 		seasonOptions: getSeasonOptions(),
 		seasonTypeOptions: getSeasonTypeOptions(),
-		weekOptions: getWeekOptions(selectedSeasonType, availableWeeks),
+		weekOptions: getWeekOptions(selectedSeasonType, availableWeeks, currentWeek),
 		touchdowns
 	};
 };
