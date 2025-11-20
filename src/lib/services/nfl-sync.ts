@@ -619,7 +619,7 @@ export async function syncNFLMatchups() {
 					}) || null;
 				}
 
-					if (matchingEvent && matchingEvent.bookmakers && matchingEvent.bookmakers.length > 0) {
+				if (matchingEvent && matchingEvent.bookmakers && matchingEvent.bookmakers.length > 0) {
 						let bestSpread: any = null;
 						let bestTotal: any = null;
 						let bestMoneyline: any = { home: null, away: null };
