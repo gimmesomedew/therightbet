@@ -37,6 +37,7 @@
 	let loadingMatchups = $state(false);
 	let activeTab = $state<'matchups' | 'touchdowns'>('matchups');
 	let currentWeek = $state<number | null>(null);
+	let selectedDay = $state<'all' | 'today' | 'tomorrow' | 'this-week'>('all');
 	let showFavoritesOnly = $state(false);
 	let favoriteGameIds = $state<Set<string>>(new Set());
 	let togglingFavorite = $state<string | null>(null);
@@ -268,11 +269,45 @@
 		return favoriteGameIds.has(gameId);
 	}
 
-	const filteredMatchups = $derived.by(() => {
-		if (showFavoritesOnly) {
-			return weekMatchups.filter(game => favoriteGameIds.has(game.id));
+	// Helper function to check if a game date matches the selected day filter
+	function matchesDayFilter(gameDate: string): boolean {
+		if (selectedDay === 'all') return true;
+		
+		const gameDateObj = new Date(gameDate);
+		const now = new Date();
+		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const tomorrow = new Date(today);
+		tomorrow.setDate(tomorrow.getDate() + 1);
+		const weekEnd = new Date(today);
+		weekEnd.setDate(weekEnd.getDate() + 6);
+		
+		const gameDay = new Date(gameDateObj.getFullYear(), gameDateObj.getMonth(), gameDateObj.getDate());
+		
+		if (selectedDay === 'today') {
+			return gameDay.getTime() === today.getTime();
+		} else if (selectedDay === 'tomorrow') {
+			return gameDay.getTime() === tomorrow.getTime();
+		} else if (selectedDay === 'this-week') {
+			return gameDay >= today && gameDay <= weekEnd;
 		}
-		return weekMatchups;
+		
+		return true;
+	}
+
+	const filteredMatchups = $derived.by(() => {
+		let filtered = weekMatchups;
+
+		// Apply day filter first
+		if (selectedDay !== 'all') {
+			filtered = filtered.filter(game => matchesDayFilter(game.gameDate));
+		}
+
+		// Apply favorites filter
+		if (showFavoritesOnly) {
+			filtered = filtered.filter(game => favoriteGameIds.has(game.id));
+		}
+
+		return filtered;
 	});
 </script>
 
@@ -388,14 +423,25 @@
 		<section class="matchups-section" aria-live="polite">
 			<div class="matchups-header">
 				<h2>Week {selectedWeek} Matchups & Spreads</h2>
-				<button
-					type="button"
-					onclick={() => showFavoritesOnly = !showFavoritesOnly}
-					class="favorites-toggle"
-					class:active={showFavoritesOnly}
-					aria-label="Show favorites only"
-					title="Show favorite games only"
-				>
+				<div class="matchups-filters">
+					<select
+						bind:value={selectedDay}
+						class="day-filter"
+						aria-label="Filter by day"
+					>
+						<option value="all">All Days</option>
+						<option value="today">Today</option>
+						<option value="tomorrow">Tomorrow</option>
+						<option value="this-week">This Week</option>
+					</select>
+					<button
+						type="button"
+						onclick={() => showFavoritesOnly = !showFavoritesOnly}
+						class="favorites-toggle"
+						class:active={showFavoritesOnly}
+						aria-label="Show favorites only"
+						title="Show favorite games only"
+					>
 					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill={showFavoritesOnly ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"></path>
 					</svg>
@@ -1303,6 +1349,35 @@
 		margin: 0;
 		color: var(--color-text-primary);
 		font-size: 1.5rem;
+	}
+
+	.matchups-filters {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+	}
+
+	.day-filter {
+		padding: var(--spacing-sm) var(--spacing-md);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		font-size: 0.9375rem;
+		background: white;
+		color: var(--color-text-primary);
+		cursor: pointer;
+		transition: border-color 0.2s, box-shadow 0.2s;
+		font-weight: 500;
+		min-width: 140px;
+	}
+
+	.day-filter:hover {
+		border-color: var(--color-primary);
+	}
+
+	.day-filter:focus {
+		outline: none;
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 	}
 
 	.favorites-toggle {

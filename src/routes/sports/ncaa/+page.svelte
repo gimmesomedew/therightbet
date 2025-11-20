@@ -17,6 +17,7 @@
 	let weekStart = $state<string>('');
 	let weekEnd = $state<string>('');
 	let searchQuery = $state('');
+	let selectedDay = $state<'all' | 'today' | 'tomorrow' | 'this-week'>('all');
 	let selectedConference = $state<string>('all');
 	let showFavoritesOnly = $state(false);
 	let favoriteGameIds = $state<Set<string>>(new Set());
@@ -35,11 +36,41 @@
 		return Array.from(conferences).sort();
 	});
 
-	// Filter matchups based on search query, conference, and favorites
+	// Helper function to check if a game date matches the selected day filter
+	function matchesDayFilter(gameDate: string): boolean {
+		if (selectedDay === 'all') return true;
+		
+		const gameDateObj = new Date(gameDate);
+		const now = new Date();
+		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const tomorrow = new Date(today);
+		tomorrow.setDate(tomorrow.getDate() + 1);
+		const weekEnd = new Date(today);
+		weekEnd.setDate(weekEnd.getDate() + 6);
+		
+		const gameDay = new Date(gameDateObj.getFullYear(), gameDateObj.getMonth(), gameDateObj.getDate());
+		
+		if (selectedDay === 'today') {
+			return gameDay.getTime() === today.getTime();
+		} else if (selectedDay === 'tomorrow') {
+			return gameDay.getTime() === tomorrow.getTime();
+		} else if (selectedDay === 'this-week') {
+			return gameDay >= today && gameDay <= weekEnd;
+		}
+		
+		return true;
+	}
+
+	// Filter matchups based on search query, day filter, conference, and favorites
 	const matchups = $derived.by(() => {
 		let filtered = allMatchups;
 
-		// Apply favorites filter first
+		// Apply day filter first
+		if (selectedDay !== 'all') {
+			filtered = filtered.filter(game => matchesDayFilter(game.gameDate));
+		}
+
+		// Apply favorites filter
 		if (showFavoritesOnly) {
 			filtered = filtered.filter(game => favoriteGameIds.has(game.id));
 		}
@@ -303,6 +334,16 @@
 			<h2>Current Week's Matchups</h2>
 			<div class="search-controls">
 				<div class="filters-row">
+					<select
+						bind:value={selectedDay}
+						class="day-filter"
+						aria-label="Filter by day"
+					>
+						<option value="all">All Days</option>
+						<option value="today">Today</option>
+						<option value="tomorrow">Tomorrow</option>
+						<option value="this-week">This Week</option>
+					</select>
 					<div class="search-input-wrapper">
 						<svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<circle cx="11" cy="11" r="8"></circle>
@@ -682,6 +723,29 @@
 		align-items: center;
 		gap: var(--spacing-md);
 		flex-wrap: wrap;
+	}
+
+	.day-filter {
+		padding: var(--spacing-sm) var(--spacing-md);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		font-size: 0.9375rem;
+		background: white;
+		color: var(--color-text-primary);
+		cursor: pointer;
+		transition: border-color 0.2s, box-shadow 0.2s;
+		font-weight: 500;
+		min-width: 140px;
+	}
+
+	.day-filter:hover {
+		border-color: var(--color-primary);
+	}
+
+	.day-filter:focus {
+		outline: none;
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 	}
 
 	.conference-filter {
